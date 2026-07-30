@@ -110,13 +110,16 @@ async function handleAboutProtectedChannelClick(ctx, channelKey) {
     await ctx.answerCbQuery("Канал не настроен", { show_alert: true });
     return;
   }
-  const invites = getAboutInviteSession(ctx);
 
   try {
-    if (!invites[channelKey]) {
-      const created = await ctx.telegram.createChatInviteLink(chatId, {});
-      invites[channelKey] = created.invite_link;
-    }
+    const expireDate = Math.floor(Date.now() / 1000) + 5 * 60;
+    const created = await ctx.telegram.createChatInviteLink(chatId, {
+      expire_date: expireDate,
+      member_limit: 1,
+    });
+
+    const invites = getAboutInviteSession(ctx);
+    invites[channelKey] = created.invite_link;
 
     const markup = aboutProjectKeyboard(env.aboutInfoChannelUrl, invites).reply_markup;
     try {
@@ -125,9 +128,7 @@ async function handleAboutProtectedChannelClick(ctx, channelKey) {
       logger.warn("editMessageReplyMarkup about keyboard failed", editErr?.message || editErr);
     }
 
-    await ctx.answerCbQuery("Ссылка приглашения создана. Нажмите кнопку ещё раз", {
-      show_alert: true,
-    });
+    await ctx.answerCbQuery("Ссылка на 5 мин · 1 вход — нажми кнопку ещё раз");
   } catch (e) {
     const desc = e?.response?.description || e.message || "Не удалось создать ссылку";
     await ctx.answerCbQuery(String(desc).slice(0, 200), { show_alert: true });
