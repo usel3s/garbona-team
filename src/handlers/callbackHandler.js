@@ -128,7 +128,7 @@ async function handleAboutProtectedChannelClick(ctx, channelKey) {
       logger.warn("editMessageReplyMarkup about keyboard failed", editErr?.message || editErr);
     }
 
-    await ctx.answerCbQuery("Ссылка на 5 мин · 1 вход — нажми кнопку ещё раз");
+    await ctx.answerCbQuery("нажми кнопку ещё раз");
   } catch (e) {
     const desc = e?.response?.description || e.message || "Не удалось создать ссылку";
     await ctx.answerCbQuery(String(desc).slice(0, 200), { show_alert: true });

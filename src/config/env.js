@@ -10,16 +10,13 @@ const env = {
     .map((v) => v.trim())
     .filter(Boolean),
   applicationsChannelId: process.env.APPLICATIONS_CHANNEL_ID || "-5246061488",
-  /** Каналы для раздела «О проекте» (инвайт через бота, бот — админ) */
   aboutPayoutsChatId: process.env.ABOUT_PAYOUTS_CHAT_ID || "-1003821514718",
   aboutWorkersChatId: process.env.ABOUT_WORKERS_CHAT_ID || "-1003710871843",
   aboutManualsChatId: process.env.ABOUT_MANUALS_CHAT_ID || "-1003731342806",
   aboutInfoChannelUrl:
     process.env.ABOUT_INFO_CHANNEL_URL || "https://t.me/garbona",
-  /** Канал модерации заявок на выплату */
   payoutRequestsChannelId:
     process.env.PAYOUT_REQUESTS_CHANNEL_ID || "-1003840719737",
-  /** Минимальная сумма вывода, USD */
   walletMinWithdrawalUsd: Number(process.env.WALLET_MIN_WITHDRAWAL_USD || 10),
 };
 
