@@ -1,3 +1,6 @@
+const { isIgnorableTelegramError, getTelegramErrorText } = require("./telegramSafe");
+const { logger } = require("./logger");
+
 /**
  * Держит в чате одно сообщение бота: удаляет предыдущее и шлёт новое.
  */
@@ -16,8 +19,10 @@ async function upsertBotMessage(ctx, text, extra = {}) {
   for (const id of ids) {
     try {
       await ctx.telegram.deleteMessage(chatId, id);
-    } catch (_) {
-      /* уже удалено или недоступно */
+    } catch (error) {
+      if (!isIgnorableTelegramError(error)) {
+        logger.warn("deleteMessage failed", getTelegramErrorText(error));
+      }
     }
   }
 
@@ -25,11 +30,19 @@ async function upsertBotMessage(ctx, text, extra = {}) {
     ctx.session.ui = { ...(ctx.session.ui || {}), messageId: null };
   }
 
-  const sent = await ctx.reply(text, mergedExtra);
-  if (ctx.session) {
-    ctx.session.ui = { ...(ctx.session.ui || {}), messageId: sent.message_id };
+  try {
+    const sent = await ctx.reply(text, mergedExtra);
+    if (ctx.session) {
+      ctx.session.ui = { ...(ctx.session.ui || {}), messageId: sent.message_id };
+    }
+    return sent.message_id;
+  } catch (error) {
+    if (isIgnorableTelegramError(error)) {
+      logger.warn("Ignored upsertBotMessage error", getTelegramErrorText(error));
+      return null;
+    }
+    throw error;
   }
-  return sent.message_id;
 }
 
 module.exports = { upsertBotMessage };

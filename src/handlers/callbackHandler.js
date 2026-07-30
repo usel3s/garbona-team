@@ -57,7 +57,10 @@ const { getGlobalWorkerPercent } = require("../services/settingsService");
 
 function requireAdmin(ctx) {
   if (!isAdminTelegramId(ctx.from.id)) {
-    ctx.answerCbQuery("Недостаточно прав", { show_alert: true });
+    // fire-and-forget; patched answerCbQuery never throws
+    Promise.resolve(ctx.answerCbQuery("Недостаточно прав", { show_alert: true })).catch(
+      () => {}
+    );
     return false;
   }
   return true;
@@ -275,6 +278,7 @@ function clearPendingInputs(ctx) {
 
 function registerCallbackHandlers(bot) {
   bot.action("menu:home", async (ctx) => {
+    await ctx.answerCbQuery();
     clearPendingInputs(ctx);
     if (ctx.scene?.current) {
       try {
@@ -319,8 +323,8 @@ function registerCallbackHandlers(bot) {
   });
 
   bot.action("profile:profits", async (ctx) => {
-    const user = await ensureUser(ctx.from);
     await ctx.answerCbQuery();
+    const user = await ensureUser(ctx.from);
     await upsertBotMessage(
       ctx,
       [
@@ -535,9 +539,9 @@ function registerCallbackHandlers(bot) {
   });
 
   bot.action("menu:about", async (ctx) => {
+    await ctx.answerCbQuery();
     const projectStats = await getProjectProfitStats();
     const globalPercent = await getGlobalWorkerPercent(80);
-    await ctx.answerCbQuery();
     await upsertBotMessage(
       ctx,
       [

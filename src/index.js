@@ -9,6 +9,11 @@ const { applicationScene } = require("./scenes/applicationScene");
 const { postbotScene } = require("./scenes/postbotScene");
 const { logger } = require("./utils/logger");
 const { pe } = require("./utils/emoji");
+const {
+  isIgnorableTelegramError,
+  getTelegramErrorText,
+  patchSafeAnswerCbQuery,
+} = require("./utils/telegramSafe");
 
 async function bootstrap() {
   validateEnv();
@@ -18,27 +23,73 @@ async function bootstrap() {
   const stage = new Scenes.Stage([applicationScene, postbotScene]);
 
   bot.use(session());
+
+  bot.use(async (ctx, next) => {
+    patchSafeAnswerCbQuery(ctx);
+    return next();
+  });
+
   bot.use(stage.middleware());
 
   bot.use(async (ctx, next) => {
     try {
       await next();
     } catch (error) {
+      if (isIgnorableTelegramError(error)) {
+        logger.warn("Ignored telegram error", getTelegramErrorText(error));
+        return;
+      }
+
       logger.error("Unhandled bot error", error);
+
       try {
-        await ctx.reply(`${pe("error")} Произошла ошибка. Попробуй ещё раз позже.`, {
-          parse_mode: "HTML",
-        });
+        if (ctx.callbackQuery) {
+          await ctx.answerCbQuery("Ошибка. Попробуй ещё раз", { show_alert: true });
+        }
+      } catch (_) {
+        /* ignore */
+      }
+
+      try {
+        if (ctx.chat?.id) {
+          await ctx.reply(`${pe("error")} Произошла ошибка. Попробуй ещё раз позже.`, {
+            parse_mode: "HTML",
+          });
+        }
       } catch (_) {
         /* ignore */
       }
     }
   });
 
+  bot.catch((error, ctx) => {
+    if (isIgnorableTelegramError(error)) {
+      logger.warn("Ignored telegraf catch error", getTelegramErrorText(error));
+      return;
+    }
+    logger.error("Telegraf catch", error, ctx?.updateType || "");
+  });
+
   registerStartCommand(bot);
   registerCallbackHandlers(bot);
   registerTextHandlers(bot);
   registerInlineHandlers(bot);
+
+  process.on("unhandledRejection", (reason) => {
+    if (isIgnorableTelegramError(reason)) {
+      logger.warn("Ignored unhandledRejection", getTelegramErrorText(reason));
+      return;
+    }
+    logger.error("Unhandled rejection", reason);
+  });
+
+  process.on("uncaughtException", (error) => {
+    if (isIgnorableTelegramError(error)) {
+      logger.warn("Ignored uncaughtException", getTelegramErrorText(error));
+      return;
+    }
+    logger.error("Uncaught exception", error);
+  });
 
   bot.launch({
     allowedUpdates: [
