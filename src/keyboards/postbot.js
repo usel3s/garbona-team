@@ -53,15 +53,9 @@ function postbotNameKeyboard() {
   ]);
 }
 
-function postbotReadyKeyboard(code) {
+function postbotReadyKeyboard(postId) {
   return Markup.inlineKeyboard([
-    [
-      {
-        text: "Поделиться",
-        switch_inline_query: code,
-        icon_custom_emoji_id: "5769289093221454192",
-      },
-    ],
+    [btn("Отправить", `postbot:send:${postId}`, "broadcast")],
     [btn("Сохранённые посты", "postbot:saved", "file")],
     [btn("Создать ещё", "postbot:create", "edit")],
     [btn("В админ-панель", "admin:panel", "code")],
@@ -70,11 +64,7 @@ function postbotReadyKeyboard(code) {
 
 function postbotSavedListKeyboard(posts, page, hasPrev, hasNext) {
   const rows = (posts || []).map((p) => [
-    btn(
-      (p.name || p.code).slice(0, 40),
-      `postbot:view:${p._id}`,
-      "file"
-    ),
+    btn((p.name || p.code).slice(0, 40), `postbot:view:${p._id}`, "file"),
   ]);
   const nav = [];
   if (hasPrev) nav.push(btn("Назад", `postbot:saved:${page - 1}`, "time"));
@@ -84,17 +74,17 @@ function postbotSavedListKeyboard(posts, page, hasPrev, hasNext) {
   return Markup.inlineKeyboard(rows);
 }
 
-function postbotViewKeyboard(postId, code) {
+function postbotViewKeyboard(postId) {
   return Markup.inlineKeyboard([
-    [
-      {
-        text: "Поделиться",
-        switch_inline_query: code,
-        icon_custom_emoji_id: "5769289093221454192",
-      },
-    ],
+    [btn("Отправить", `postbot:send:${postId}`, "broadcast")],
     [btn("Удалить", `postbot:delete:${postId}`, "delete")],
     [btn("К списку", "postbot:saved", "file")],
+  ]);
+}
+
+function postbotSendCancelKeyboard(postId) {
+  return Markup.inlineKeyboard([
+    [btn("Отмена", `postbot:view:${postId}`, "error")],
   ]);
 }
 
@@ -107,4 +97,5 @@ module.exports = {
   postbotReadyKeyboard,
   postbotSavedListKeyboard,
   postbotViewKeyboard,
+  postbotSendCancelKeyboard,
 };

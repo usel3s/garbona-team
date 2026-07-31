@@ -341,6 +341,85 @@ function buildInlineResult(post) {
   return null;
 }
 
+/**
+ * Отправка сохранённого поста от имени бота в указанный чат.
+ */
+async function sendSavedPost(telegram, chatId, post) {
+  const reply_markup =
+    post.buttons?.length > 0 ? buttonsToTelegramMarkup(post.buttons) : undefined;
+  const entities = sanitizeEntities(post.entities || []);
+  const text = post.text || "";
+  const caption = text || undefined;
+  const caption_entities = entities.length ? entities : undefined;
+
+  if (post.contentType === "photo" && post.fileId) {
+    return telegram.sendPhoto(chatId, post.fileId, {
+      caption,
+      caption_entities,
+      reply_markup,
+    });
+  }
+  if (post.contentType === "video" && post.fileId) {
+    return telegram.sendVideo(chatId, post.fileId, {
+      caption,
+      caption_entities,
+      reply_markup,
+    });
+  }
+  if (post.contentType === "animation" && post.fileId) {
+    return telegram.sendAnimation(chatId, post.fileId, {
+      caption,
+      caption_entities,
+      reply_markup,
+    });
+  }
+  if (post.contentType === "audio" && post.fileId) {
+    return telegram.sendAudio(chatId, post.fileId, {
+      caption,
+      caption_entities,
+      reply_markup,
+    });
+  }
+  if (post.contentType === "document" && post.fileId) {
+    return telegram.sendDocument(chatId, post.fileId, {
+      caption,
+      caption_entities,
+      reply_markup,
+    });
+  }
+
+  return telegram.sendMessage(chatId, text || " ", {
+    entities: entities.length ? entities : undefined,
+    reply_markup,
+    link_preview_options: { is_disabled: post.linkPreview === false },
+  });
+}
+
+/**
+ * Извлекает chat_id из пересланного сообщения или прямого chat id / @username.
+ */
+function resolveTargetChatId(message) {
+  if (!message) return null;
+
+  // Telegram Bot API 7+: forward_origin
+  const origin = message.forward_origin;
+  if (origin) {
+    if (origin.type === "channel" && origin.chat?.id) return origin.chat.id;
+    if (origin.type === "chat" && origin.sender_chat?.id) return origin.sender_chat.id;
+  }
+
+  if (message.forward_from_chat?.id) return message.forward_from_chat.id;
+  if (message.sender_chat?.id && message.sender_chat.id !== message.chat?.id) {
+    return message.sender_chat.id;
+  }
+
+  const raw = String(message.text || "").trim();
+  if (/^-?\d+$/.test(raw)) return raw;
+  if (raw.startsWith("@") && raw.length > 1) return raw;
+
+  return null;
+}
+
 module.exports = {
   generatePostCode,
   parseButtonsInput,
@@ -354,6 +433,8 @@ module.exports = {
   getPostById,
   deletePostById,
   buildInlineResult,
+  sendSavedPost,
+  resolveTargetChatId,
   escapeHtml,
   sanitizeEntities,
   shiftEntities,

@@ -8,6 +8,8 @@ const {
   countSavedPosts,
   getPostById,
   deletePostById,
+  sendSavedPost,
+  resolveTargetChatId,
   escapeHtml,
   sanitizeEntities,
 } = require("../services/postService");
@@ -19,9 +21,11 @@ const {
   postbotReadyKeyboard,
   postbotSavedListKeyboard,
   postbotViewKeyboard,
+  postbotSendCancelKeyboard,
 } = require("../keyboards/postbot");
-const { sendUiMessage, renderPostSettings, deleteUiMessage } = require("../utils/postbotUi");
+const { sendUiMessage, renderPostSettings } = require("../utils/postbotUi");
 const { logger } = require("../utils/logger");
+const { getTelegramErrorText } = require("../utils/telegramSafe");
 
 const PAGE_SIZE = 8;
 
@@ -50,13 +54,14 @@ function getStep(ctx) {
 async function showHome(ctx) {
   setStep(ctx, "home");
   ctx.scene.session.draft = null;
+  ctx.scene.session.sendPostId = null;
   await sendUiMessage(
     ctx,
     [
       `${pe("bot")} <b>Postbot</b>`,
       "",
       "Создавай посты с текстом, медиа и кнопками,",
-      "сохраняй и делись через inline в любом чате.",
+      "сохраняй и отправляй от имени бота в любой чат.",
     ].join("\n"),
     { reply_markup: postbotHomeKeyboard().reply_markup }
   );
@@ -124,8 +129,6 @@ async function finalizePost(ctx, name) {
       name,
       createdByTelegramId: ctx.from.id,
     });
-    const username = ctx.botInfo?.username || "Bot";
-    const shareCode = `@${username} ${post.code}`;
     setStep(ctx, "home");
     ctx.scene.session.draft = null;
     await sendUiMessage(
@@ -133,13 +136,11 @@ async function finalizePost(ctx, name) {
       [
         `${pe("celebrate")} <b>Пост готов!</b>`,
         "",
-        `<code>${shareCode}</code>`,
+        `<b>Название:</b> ${escapeHtml(post.name)}`,
         "",
-        `${pe("info")} Скопируй код и используй в любом чате для мгновенной отправки поста.`,
-        "",
-        `<b>Название:</b> ${post.name}`,
+        `${pe("info")} Нажми «Отправить», затем перешли сообщение из целевого чата — бот опубликует пост от своего имени.`,
       ].join("\n"),
-      { reply_markup: postbotReadyKeyboard(post.code).reply_markup }
+      { reply_markup: postbotReadyKeyboard(String(post._id)).reply_markup }
     );
   } catch (error) {
     logger.error("Postbot save failed", error);
@@ -153,6 +154,7 @@ async function finalizePost(ctx, name) {
 
 async function showSavedList(ctx, page = 0) {
   setStep(ctx, "saved");
+  ctx.scene.session.sendPostId = null;
   const safePage = Math.max(0, Number(page) || 0);
   const total = await countSavedPosts();
   const posts = await listSavedPosts(PAGE_SIZE, safePage * PAGE_SIZE);
@@ -193,20 +195,46 @@ async function showPostView(ctx, postId) {
   }
 
   setStep(ctx, "view");
-  const username = ctx.botInfo?.username || "Bot";
+  ctx.scene.session.sendPostId = null;
   await sendUiMessage(
     ctx,
     [
       `${pe("file")} <b>${escapeHtml(post.name)}</b>`,
       "",
-      `<b>Код:</b> <code>@${username} ${post.code}</code>`,
       `<b>Тип:</b> ${post.contentType}`,
       `<b>Кнопок:</b> ${(post.buttons || []).reduce((n, r) => n + r.length, 0)}`,
       `<b>Создан:</b> ${new Date(post.createdAt).toLocaleString("ru-RU")}`,
       "",
       post.text ? escapeHtml(post.text.slice(0, 500)) : "<i>без текста</i>",
+      "",
+      `${pe("info")} «Отправить» — бот опубликует пост в выбранный чат.`,
     ].join("\n"),
-    { reply_markup: postbotViewKeyboard(String(post._id), post.code).reply_markup }
+    { reply_markup: postbotViewKeyboard(String(post._id)).reply_markup }
+  );
+}
+
+async function showSendTargetPrompt(ctx, postId) {
+  const post = await getPostById(postId);
+  if (!post) {
+    await ctx.answerCbQuery?.("Пост не найден", { show_alert: true });
+    await showSavedList(ctx, 0);
+    return;
+  }
+  setStep(ctx, "await_send_target");
+  ctx.scene.session.sendPostId = String(post._id);
+  await sendUiMessage(
+    ctx,
+    [
+      `${pe("broadcast")} <b>Отправка от имени бота</b>`,
+      "",
+      `Пост: <b>${escapeHtml(post.name)}</b>`,
+      "",
+      "Перешли сюда <b>любое сообщение</b> из целевого чата или канала,",
+      "либо отправь <code>chat_id</code> / <code>@username</code>.",
+      "",
+      `${pe("info")} Бот должен иметь право писать в этот чат.`,
+    ].join("\n"),
+    { reply_markup: postbotSendCancelKeyboard(String(post._id)).reply_markup }
   );
 }
 
@@ -291,6 +319,11 @@ scene.action(/^postbot:view:(.+)$/, async (ctx) => {
   await showPostView(ctx, ctx.match[1]);
 });
 
+scene.action(/^postbot:send:(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  await showSendTargetPrompt(ctx, ctx.match[1]);
+});
+
 scene.action(/^postbot:delete:(.+)$/, async (ctx) => {
   await deletePostById(ctx.match[1]);
   await ctx.answerCbQuery("Удалено");
@@ -307,6 +340,70 @@ async function tryDeleteUserMessage(ctx) {
 
 scene.on("message", async (ctx) => {
   const step = getStep(ctx);
+
+  if (step === "await_send_target") {
+    const postId = ctx.scene.session.sendPostId;
+    const chatId = resolveTargetChatId(ctx.message);
+    await tryDeleteUserMessage(ctx);
+
+    if (!postId) {
+      await showHome(ctx);
+      return;
+    }
+    if (!chatId) {
+      await sendUiMessage(
+        ctx,
+        [
+          `${pe("error")} Не удалось определить чат.`,
+          "",
+          "Перешли сообщение из целевого чата или отправь <code>chat_id</code> / <code>@channel</code>.",
+        ].join("\n"),
+        { reply_markup: postbotSendCancelKeyboard(postId).reply_markup }
+      );
+      return;
+    }
+
+    const post = await getPostById(postId);
+    if (!post) {
+      ctx.scene.session.sendPostId = null;
+      await sendUiMessage(
+        ctx,
+        `${pe("error")} Пост не найден.`,
+        { reply_markup: postbotHomeKeyboard().reply_markup }
+      );
+      return;
+    }
+
+    try {
+      await sendSavedPost(ctx.telegram, chatId, post);
+      ctx.scene.session.sendPostId = null;
+      setStep(ctx, "view");
+      await sendUiMessage(
+        ctx,
+        [
+          `${pe("success")} <b>Пост отправлен от имени бота</b>`,
+          "",
+          `Чат: <code>${escapeHtml(String(chatId))}</code>`,
+          `Пост: <b>${escapeHtml(post.name)}</b>`,
+        ].join("\n"),
+        { reply_markup: postbotViewKeyboard(String(post._id)).reply_markup }
+      );
+    } catch (error) {
+      logger.error("Postbot send failed", error);
+      await sendUiMessage(
+        ctx,
+        [
+          `${pe("error")} Не удалось отправить.`,
+          "",
+          escapeHtml(getTelegramErrorText(error) || error.message || "Ошибка"),
+          "",
+          "Проверь, что бот есть в чате и может писать сообщения.",
+        ].join("\n"),
+        { reply_markup: postbotSendCancelKeyboard(postId).reply_markup }
+      );
+    }
+    return;
+  }
 
   if (step === "await_content") {
     const content = extractContentFromMessage(ctx.message);
