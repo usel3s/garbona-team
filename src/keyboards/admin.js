@@ -62,6 +62,7 @@ function adminStatsKeyboard(selectedPeriod = "all") {
       btn(label("30d", "Месяц"), "admin:stats:period:30d", "calendar"),
       btn(label("all", "Всё время"), "admin:stats:period:all", "statistics"),
     ],
+    [btn("Управление заявками", "admin:apps", "notification")],
     [btn("Топ воркеров", `admin:stats:top:${selectedPeriod}`, "analytics")],
     [btn("Назад", "admin:panel", "home")],
   ]);

@@ -7,6 +7,8 @@ const {
 } = require("../services/userService");
 const { addProfitToUserByTelegramId } = require("../services/profitService");
 const { setGlobalWorkerPercent, setUsdRubRate } = require("../services/settingsService");
+const { addFormQuestion, getForm } = require("../services/formService");
+const { adminQuestionsKeyboard } = require("../keyboards/application");
 const { env } = require("../config/env");
 const {
   getAvailableUsd,
@@ -180,7 +182,10 @@ function registerTextHandlers(bot) {
           ? "admin:users"
           : adminInput?.type === "global_percent" || adminInput?.type === "currency_rate"
             ? "admin:economy"
-            : "admin:panel";
+            : adminInput?.type === "app_question_label" ||
+                adminInput?.type === "app_question_prompt"
+              ? "admin:apps:questions"
+              : "admin:panel";
       await upsertBotMessage(ctx, `${pe("error")} Пустое сообщение. Повторите ввод.`, {
         reply_markup: adminCancelKeyboard(cancelBack).reply_markup,
       });
@@ -257,6 +262,61 @@ function registerTextHandlers(bot) {
         { reply_markup: adminResultKeyboard("admin:users").reply_markup }
       );
       ctx.session.adminInput = null;
+      return;
+    }
+
+    if (adminInput?.type === "app_question_label") {
+      if (text.length > 64) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Название слишком длинное (макс. 64).`,
+          { reply_markup: adminCancelKeyboard("admin:apps:questions").reply_markup }
+        );
+        return;
+      }
+      ctx.session.adminInput = { type: "app_question_prompt", label: text };
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("edit")} Название: <b>${text}</b>`,
+          "",
+          "Теперь отправьте <b>текст вопроса</b>, который увидит кандидат.",
+        ].join("\n"),
+        { reply_markup: adminCancelKeyboard("admin:apps:questions").reply_markup }
+      );
+      return;
+    }
+
+    if (adminInput?.type === "app_question_prompt") {
+      if (text.length > 500) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Текст вопроса слишком длинный (макс. 500).`,
+          { reply_markup: adminCancelKeyboard("admin:apps:questions").reply_markup }
+        );
+        return;
+      }
+      try {
+        const question = await addFormQuestion("teamApplication", {
+          label: adminInput.label,
+          prompt: text,
+        });
+        ctx.session.adminInput = null;
+        const form = await getForm("teamApplication");
+        await upsertBotMessage(
+          ctx,
+          [
+            `${pe("success")} Вопрос добавлен: <b>${question.label}</b>`,
+            "",
+            `Всего вопросов: <b>${form.questions.length}</b>`,
+          ].join("\n"),
+          { reply_markup: adminQuestionsKeyboard(form.questions).reply_markup }
+        );
+      } catch (error) {
+        await upsertBotMessage(ctx, `${pe("error")} ${error.message}`, {
+          reply_markup: adminCancelKeyboard("admin:apps:questions").reply_markup,
+        });
+      }
       return;
     }
 

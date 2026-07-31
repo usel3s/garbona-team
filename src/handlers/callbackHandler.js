@@ -1,5 +1,4 @@
 const {
-  acceptedStartKeyboard,
   rulesAcceptKeyboard,
   profileKeyboard,
   aboutProjectKeyboard,
@@ -51,9 +50,19 @@ const {
   methodLabel,
 } = require("../services/withdrawalService");
 const {
-  getPendingApplicationById,
-  updateApplicationStatus,
+  getApplicationById,
+  listApplications,
+  decideApplication,
+  formatApplicationCard,
 } = require("../services/applicationService");
+const { getForm, removeFormQuestion } = require("../services/formService");
+const {
+  adminAppsHubKeyboard,
+  adminAppsListKeyboard,
+  adminAppViewKeyboard,
+  adminQuestionsKeyboard,
+  adminQuestionDeleteConfirmKeyboard,
+} = require("../keyboards/application");
 const { env } = require("../config/env");
 const { getProjectRulesLines } = require("../config/projectRules");
 const { logger } = require("../utils/logger");
@@ -198,6 +207,95 @@ async function renderAdminStats(ctx, period = "all") {
     ].join("\n"),
     { reply_markup: adminStatsKeyboard(period).reply_markup }
   );
+}
+
+async function renderAdminAppsHub(ctx) {
+  const { total: pendingNow } = await listApplications({ status: "pending", page: 0 });
+  await upsertBotMessage(
+    ctx,
+    [
+      `${pe("notification")} <b>Управление заявками</b>`,
+      "",
+      `Сейчас в очереди: <b>${pendingNow}</b>`,
+      "Просмотр заявок (в т.ч. без канала) и настройка вопросов формы.",
+    ].join("\n"),
+    { reply_markup: adminAppsHubKeyboard().reply_markup }
+  );
+}
+
+async function renderAdminAppsList(ctx, kind, page = 0) {
+  const isPending = kind === "pending";
+  const result = await listApplications({
+    status: isPending ? "pending" : undefined,
+    statuses: isPending ? undefined : ["accepted", "rejected"],
+    page,
+  });
+
+  const title = isPending ? "На рассмотрении" : "Закрытые заявки";
+  if (!result.total) {
+    await upsertBotMessage(
+      ctx,
+      `${pe("info")} <b>${title}</b>\n\nСписок пуст.`,
+      {
+        reply_markup: {
+          inline_keyboard: [[btn("Назад", "admin:apps", "home")]],
+        },
+      }
+    );
+    return;
+  }
+
+  await upsertBotMessage(
+    ctx,
+    [
+      `${pe("notification")} <b>${title}</b>`,
+      `Всего: <b>${result.total}</b> · стр. ${result.page + 1}/${result.totalPages}`,
+      "",
+      "Выберите заявку:",
+    ].join("\n"),
+    {
+      reply_markup: adminAppsListKeyboard(
+        kind,
+        result.page,
+        result.totalPages,
+        result.items
+      ).reply_markup,
+    }
+  );
+}
+
+async function renderAdminAppView(ctx, applicationId, backKind = "pending", backPage = 0) {
+  const application = await getApplicationById(applicationId);
+  if (!application) {
+    await upsertBotMessage(ctx, `${pe("error")} Заявка не найдена.`, {
+      reply_markup: adminAppsHubKeyboard().reply_markup,
+    });
+    return;
+  }
+  const form = await getForm(application.formId || "teamApplication");
+  const text = await formatApplicationCard(application, form);
+  const back = `admin:apps:${backKind}:${backPage}`;
+  await upsertBotMessage(ctx, text, {
+    reply_markup: adminAppViewKeyboard(applicationId, application.status, back).reply_markup,
+  });
+}
+
+async function renderAdminQuestions(ctx) {
+  const form = await getForm("teamApplication");
+  const lines = [
+    `${pe("edit")} <b>Вопросы формы</b>`,
+    "",
+    `Всего вопросов: <b>${form.questions.length}</b>`,
+    "Нажмите на вопрос, чтобы удалить.",
+    "",
+  ];
+  form.questions.forEach((q, i) => {
+    lines.push(`<b>${i + 1}. ${q.label}</b>`);
+    lines.push(` ┖ ${q.prompt}`);
+  });
+  await upsertBotMessage(ctx, lines.join("\n"), {
+    reply_markup: adminQuestionsKeyboard(form.questions).reply_markup,
+  });
 }
 
 async function getProjectProfitStats() {
@@ -1002,43 +1100,98 @@ function registerCallbackHandlers(bot) {
     );
   });
 
+  bot.action("admin:apps", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    await renderAdminAppsHub(ctx);
+  });
+
+  bot.action("admin:apps:noop", async (ctx) => {
+    await ctx.answerCbQuery();
+  });
+
+  bot.action(/^admin:apps:(pending|closed):(\d+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const kind = ctx.match[1];
+    const page = Number(ctx.match[2]) || 0;
+    await ctx.answerCbQuery();
+    await renderAdminAppsList(ctx, kind, page);
+  });
+
+  bot.action(/^admin:apps:view:(pending|closed):(\d+):([a-f0-9]{24})$/i, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const kind = ctx.match[1];
+    const page = Number(ctx.match[2]) || 0;
+    const id = ctx.match[3];
+    await ctx.answerCbQuery();
+    await renderAdminAppView(ctx, id, kind, page);
+  });
+
+  bot.action(/^admin:apps:(accept|reject):([a-f0-9]{24})$/i, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const action = ctx.match[1];
+    const id = ctx.match[2];
+    const result = await decideApplication(ctx.telegram, id, action, ctx.from);
+    if (!result.ok) {
+      await ctx.answerCbQuery("Заявка уже обработана", { show_alert: true });
+      await renderAdminAppView(ctx, id, "closed", 0);
+      return;
+    }
+    await ctx.answerCbQuery(action === "accept" ? "Заявка принята" : "Заявка отклонена");
+    await renderAdminAppView(ctx, id, "closed", 0);
+  });
+
+  bot.action("admin:apps:questions", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    await renderAdminQuestions(ctx);
+  });
+
+  bot.action("admin:apps:qadd", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    ctx.session.adminInput = { type: "app_question_label" };
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      `${pe("edit")} Введите <b>название</b> вопроса (короткая подпись, напр. «Опыт»).`,
+      { reply_markup: adminCancelKeyboard("admin:apps:questions").reply_markup }
+    );
+  });
+
+  bot.action(/^admin:apps:qdel:confirm:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const key = ctx.match[1];
+    try {
+      await removeFormQuestion("teamApplication", key);
+      await ctx.answerCbQuery("Вопрос удалён");
+      await renderAdminQuestions(ctx);
+    } catch (error) {
+      await ctx.answerCbQuery(String(error.message || error).slice(0, 180), {
+        show_alert: true,
+      });
+    }
+  });
+
+  bot.action(/^admin:apps:qdel:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const key = ctx.match[1];
+    if (String(key).startsWith("confirm:")) return;
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      `${pe("delete")} Удалить этот вопрос из формы заявки?`,
+      { reply_markup: adminQuestionDeleteConfirmKeyboard(key).reply_markup }
+    );
+  });
+
   bot.action(/^moderate:(accept|reject):(.+)$/, async (ctx) => {
     if (!requireAdmin(ctx)) return;
     const action = ctx.match[1];
     const applicationId = ctx.match[2];
-    const application = await getPendingApplicationById(applicationId);
-    if (!application || application.status !== "pending") {
+    const result = await decideApplication(ctx.telegram, applicationId, action, ctx.from);
+    if (!result.ok) {
       await ctx.answerCbQuery("Заявка уже обработана", { show_alert: true });
       return;
-    }
-
-    const newStatus = action === "accept" ? "accepted" : "rejected";
-    const updated = await updateApplicationStatus(applicationId, newStatus, ctx.from.id);
-
-    if (action === "accept") {
-      await setTeamMember(updated.userId.telegramId, true);
-      await ctx.telegram.sendMessage(
-        updated.userId.telegramId,
-        [
-          `${pe("celebrate")} <b>Заявка принята!</b>`,
-          "",
-          "Добро пожаловать в команду Garbona.",
-          "Нажми кнопку ниже, чтобы открыть меню.",
-        ].join("\n"),
-        {
-          parse_mode: "HTML",
-          reply_markup: acceptedStartKeyboard().reply_markup,
-        }
-      );
-    } else {
-      await ctx.telegram.sendMessage(
-        updated.userId.telegramId,
-        `${pe("error")} К сожалению, твоя заявка была отклонена.`,
-        {
-          parse_mode: "HTML",
-          reply_markup: homeOnlyKeyboard().reply_markup,
-        }
-      );
     }
 
     const moderatorName = ctx.from.first_name || ctx.from.username || "Admin";
@@ -1047,17 +1200,21 @@ function registerCallbackHandlers(bot) {
         ? `Принял: ${moderatorName}`
         : `Отклонил: ${moderatorName}`;
 
-    await ctx.editMessageReplyMarkup({
-      inline_keyboard: [
-        [
-          btn(
-            resultLabel,
-            "moderate:done",
-            action === "accept" ? "success" : "error"
-          ),
+    try {
+      await ctx.editMessageReplyMarkup({
+        inline_keyboard: [
+          [
+            btn(
+              resultLabel,
+              "moderate:done",
+              action === "accept" ? "success" : "error"
+            ),
+          ],
         ],
-      ],
-    });
+      });
+    } catch (_) {
+      /* ignore */
+    }
     await ctx.answerCbQuery(
       action === "accept" ? "Заявка принята" : "Заявка отклонена"
     );
