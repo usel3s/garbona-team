@@ -8,7 +8,7 @@ function manualsChatId() {
 }
 
 function manualsDocsUrl() {
-  return env.manualsDocsUrl || env.aboutInfoChannelUrl || "https://t.me/garbona";
+  return env.manualsDocsUrl || env.aboutInfoChannelUrl || "https://garbona.gitbook.io/garbona-docs";
 }
 
 function chatDeepLink(chatId, threadId) {
