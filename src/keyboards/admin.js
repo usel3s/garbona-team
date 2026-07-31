@@ -50,9 +50,19 @@ function adminCurrencyKeyboard(currency = "USD") {
   ]);
 }
 
-function adminStatsKeyboard() {
+function adminStatsKeyboard(selectedPeriod = "all") {
+  const label = (period, text) => (selectedPeriod === period ? `• ${text} •` : text);
+
   return Markup.inlineKeyboard([
-    [btn("Топ воркеров", "admin:stats:top", "analytics")],
+    [
+      btn(label("24h", "День"), "admin:stats:period:24h", "time"),
+      btn(label("7d", "Неделя"), "admin:stats:period:7d", "calendar"),
+    ],
+    [
+      btn(label("30d", "Месяц"), "admin:stats:period:30d", "calendar"),
+      btn(label("all", "Всё время"), "admin:stats:period:all", "statistics"),
+    ],
+    [btn("Топ воркеров", `admin:stats:top:${selectedPeriod}`, "analytics")],
     [btn("Назад", "admin:panel", "home")],
   ]);
 }

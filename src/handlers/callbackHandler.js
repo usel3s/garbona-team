@@ -71,6 +71,7 @@ const {
   getCurrencyContext,
   formatDisplayAmount,
 } = require("../services/currencyService");
+const { getAdminDashboardStats } = require("../services/adminStatsService");
 
 function requireAdmin(ctx) {
   if (!isAdminTelegramId(ctx.from.id)) {
@@ -168,22 +169,34 @@ async function renderAdminCurrency(ctx) {
   );
 }
 
-async function renderAdminStats(ctx) {
-  const [projectStats, teamCount, currencyCtx] = await Promise.all([
-    getProjectProfitStats(),
-    User.countDocuments({ isTeamMember: true, isBanned: { $ne: true } }),
+async function renderAdminStats(ctx, period = "all") {
+  const [dash, currencyCtx] = await Promise.all([
+    getAdminDashboardStats(period),
     getCurrencyContext(),
   ]);
+  const apps = dash.applications;
+  const profits = dash.profits;
+
   await upsertBotMessage(
     ctx,
     [
       `${pe("statistics")} <b>Статистика</b>`,
+      `Период: <b>${dash.periodLabel}</b>`,
       "",
-      `${pe("users")} Участников в команде: <b>${teamCount}</b>`,
-      `${pe("coins")} Профитов начислено: <b>${projectStats.count}</b>`,
-      `${pe("analytics")} Сумма профитов: <b>${formatDisplayAmount(projectStats.totalProfit, currencyCtx)}</b>`,
+      `${pe("notification")} <b>Заявки</b>`,
+      ` ┖ Всего: <b>${apps.total}</b>`,
+      ` ┖ Принято: <b>${apps.accepted}</b>`,
+      ` ┖ Отклонено: <b>${apps.rejected}</b>`,
+      ` ┖ На рассмотрении: <b>${apps.pending}</b>`,
+      ` ┖ Сейчас в очереди: <b>${dash.pendingNow}</b>`,
+      "",
+      `${pe("coins")} <b>Профиты</b>`,
+      ` ┖ Начислено: <b>${profits.count}</b>`,
+      ` ┖ Сумма: <b>${formatDisplayAmount(profits.totalProfit, currencyCtx)}</b>`,
+      "",
+      `${pe("users")} Участников в команде: <b>${dash.teamCount}</b>`,
     ].join("\n"),
-    { reply_markup: adminStatsKeyboard().reply_markup }
+    { reply_markup: adminStatsKeyboard(period).reply_markup }
   );
 }
 
@@ -788,14 +801,22 @@ function registerCallbackHandlers(bot) {
   bot.action("admin:stats", async (ctx) => {
     if (!requireAdmin(ctx)) return;
     await ctx.answerCbQuery();
-    await renderAdminStats(ctx);
+    await renderAdminStats(ctx, "all");
   });
 
-  bot.action("admin:stats:top", async (ctx) => {
+  bot.action(/^admin:stats:period:(all|24h|7d|30d)$/, async (ctx) => {
     if (!requireAdmin(ctx)) return;
+    const period = ctx.match[1];
+    await ctx.answerCbQuery(`Период: ${periodLabel(period)}`);
+    await renderAdminStats(ctx, period);
+  });
+
+  bot.action(/^admin:stats:top(?::(all|24h|7d|30d))?$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const period = ctx.match[1] || "all";
     await ctx.answerCbQuery();
-    await renderTopWorkers(ctx, "all", {
-      back: "admin:stats",
+    await renderTopWorkers(ctx, period, {
+      back: `admin:stats:period:${period}`,
       periodPrefix: "admin:top:period",
     });
   });
@@ -805,7 +826,7 @@ function registerCallbackHandlers(bot) {
     const period = ctx.match[1];
     await ctx.answerCbQuery(`Период: ${periodLabel(period)}`);
     await renderTopWorkers(ctx, period, {
-      back: "admin:stats",
+      back: `admin:stats:period:${period}`,
       periodPrefix: "admin:top:period",
     });
   });
