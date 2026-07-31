@@ -6,7 +6,10 @@ const {
 } = require("../keyboards/application");
 const { upsertBotMessage } = require("../utils/message");
 const { getForm, formatApplicationPreview } = require("../services/formService");
-const { createAndSendApplication } = require("../services/applicationService");
+const {
+  createAndSendApplication,
+  getApplicationSubmitGate,
+} = require("../services/applicationService");
 const { ensureUser } = require("../services/userService");
 const { pe } = require("../utils/emoji");
 const { homeOnlyKeyboard } = require("../keyboards/common");
@@ -28,16 +31,9 @@ async function ensureSceneState(ctx) {
 
 scene.enter(async (ctx) => {
   const user = await ensureUser(ctx.from);
-  if (user.isBanned) {
-    await upsertBotMessage(
-      ctx,
-      `${pe("userBlocked")} Ты заблокирован и не можешь отправлять заявки.`,
-      { reply_markup: homeOnlyKeyboard().reply_markup }
-    );
-    return ctx.scene.leave();
-  }
-  if (user.isTeamMember) {
-    await upsertBotMessage(ctx, `${pe("info")} Ты уже состоишь в команде.`, {
+  const gate = await getApplicationSubmitGate(user);
+  if (!gate.allowed) {
+    await upsertBotMessage(ctx, gate.message, {
       reply_markup: homeOnlyKeyboard().reply_markup,
     });
     return ctx.scene.leave();
@@ -111,6 +107,14 @@ scene.action("app:submit", async (ctx) => {
   try {
     await createAndSendApplication(ctx, user, state.formId, state.answers);
   } catch (error) {
+    if (error.code === "APPLICATION_BLOCKED") {
+      await ctx.answerCbQuery("Подача недоступна", { show_alert: true });
+      await upsertBotMessage(ctx, error.gate?.message || `${pe("error")} Подача заявки недоступна.`, {
+        reply_markup: homeOnlyKeyboard().reply_markup,
+      });
+      await ctx.scene.leave();
+      return;
+    }
     logger.error("Application submit failed", error);
     await ctx.answerCbQuery("Ошибка отправки", { show_alert: true });
     return;

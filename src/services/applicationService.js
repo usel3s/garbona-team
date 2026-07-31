@@ -8,6 +8,143 @@ const { setTeamMember } = require("./userService");
 const { acceptedStartKeyboard, homeOnlyKeyboard } = require("../keyboards/common");
 
 const PAGE_SIZE = 5;
+/** Повторная подача после отклонения — не раньше чем через 7 дней. */
+const REAPPLY_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+
+function formatUnlockDate(date) {
+  return new Date(date).toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Можно ли пользователю подавать заявку.
+ * pending — нельзя; rejected — только через неделю после отклонения.
+ */
+async function getApplicationSubmitGate(user) {
+  if (!user?._id) {
+    return {
+      allowed: false,
+      reason: "unknown",
+      message: `${pe("error")} Не удалось проверить заявку. Попробуй позже.`,
+    };
+  }
+
+  if (user.isBanned) {
+    return {
+      allowed: false,
+      reason: "banned",
+      message: `${pe("userBlocked")} Ты заблокирован и не можешь отправлять заявки.`,
+    };
+  }
+
+  if (user.isTeamMember) {
+    return {
+      allowed: false,
+      reason: "member",
+      message: `${pe("info")} Ты уже состоишь в команде.`,
+    };
+  }
+
+  const pending = await Application.findOne({
+    userId: user._id,
+    status: "pending",
+  }).sort({ createdAt: -1 });
+
+  if (pending) {
+    return {
+      allowed: false,
+      reason: "pending",
+      message: [
+        `${pe("time")} <b>Заявка на рассмотрении</b>`,
+        "",
+        "Пока админы не примут решение, подать заявку повторно нельзя.",
+        "Ожидай ответа — бот пришлёт уведомление.",
+      ].join("\n"),
+    };
+  }
+
+  const accepted = await Application.findOne({
+    userId: user._id,
+    status: "accepted",
+  }).sort({ updatedAt: -1 });
+
+  if (accepted) {
+    return {
+      allowed: false,
+      reason: "accepted",
+      message: `${pe("success")} Твоя заявка уже была принята.`,
+    };
+  }
+
+  const lastRejected = await Application.findOne({
+    userId: user._id,
+    status: "rejected",
+  }).sort({ updatedAt: -1 });
+
+  if (lastRejected) {
+    const decidedAt = lastRejected.updatedAt || lastRejected.createdAt;
+    const unlockAt = new Date(decidedAt).getTime() + REAPPLY_COOLDOWN_MS;
+    if (Date.now() < unlockAt) {
+      return {
+        allowed: false,
+        reason: "cooldown",
+        unlockAt: new Date(unlockAt),
+        message: [
+          `${pe("error")} <b>Заявка отклонена</b>`,
+          "",
+          "Подать заявку снова можно только через <b>7 дней</b> после отклонения.",
+          `Доступно с: <b>${formatUnlockDate(unlockAt)}</b>`,
+        ].join("\n"),
+      };
+    }
+  }
+
+  return { allowed: true, reason: "ok", message: "" };
+}
+
+async function createAndSendApplication(ctx, user, formId, answers) {
+  const gate = await getApplicationSubmitGate(user);
+  if (!gate.allowed) {
+    const err = new Error(gate.reason || "submit_blocked");
+    err.code = "APPLICATION_BLOCKED";
+    err.gate = gate;
+    throw err;
+  }
+
+  const form = await getForm(formId);
+  const application = await Application.create({
+    userId: user._id,
+    formId,
+    answers,
+    status: "pending",
+  });
+
+  try {
+    const message = await ctx.telegram.sendMessage(
+      env.applicationsChannelId,
+      buildApplicationChannelText(user, answers, form),
+      {
+        parse_mode: "HTML",
+        reply_markup: moderatorApplicationKeyboard(application._id.toString()).reply_markup,
+      }
+    );
+    application.channelMessageId = String(message.message_id);
+    await application.save();
+  } catch (error) {
+    logger.warn(
+      "Application saved but channel send failed",
+      application._id.toString(),
+      error.message
+    );
+  }
+
+  return application;
+}
 
 function buildApplicationChannelText(user, answers, form) {
   const lines = [
@@ -218,6 +355,8 @@ async function decideApplication(telegram, applicationId, action, moderator) {
 
 module.exports = {
   PAGE_SIZE,
+  REAPPLY_COOLDOWN_MS,
+  getApplicationSubmitGate,
   buildApplicationChannelText,
   formatApplicationCard,
   createAndSendApplication,

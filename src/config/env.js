@@ -15,6 +15,8 @@ const env = {
   aboutManualsChatId: process.env.ABOUT_MANUALS_CHAT_ID || "-1003731342806",
   aboutInfoChannelUrl:
     process.env.ABOUT_INFO_CHANNEL_URL || "https://t.me/garbona",
+  /** Публичная ссылка на GitBook / базу мануалов (кнопка в треде). */
+  manualsDocsUrl: process.env.MANUALS_DOCS_URL || "",
   payoutRequestsChannelId:
     process.env.PAYOUT_REQUESTS_CHANNEL_ID || "-1003840719737",
   walletMinWithdrawalUsd: Number(process.env.WALLET_MIN_WITHDRAWAL_USD || 10),

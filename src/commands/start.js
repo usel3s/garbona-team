@@ -1,6 +1,7 @@
-const { applicationStartKeyboard, participantPanelKeyboard } = require("../keyboards/common");
+const { applicationStartKeyboard, participantPanelKeyboard, homeOnlyKeyboard } = require("../keyboards/common");
 const { upsertBotMessage } = require("../utils/message");
 const { ensureUser } = require("../services/userService");
+const { getApplicationSubmitGate } = require("../services/applicationService");
 const { pe } = require("../utils/emoji");
 
 async function renderHome(ctx) {
@@ -13,6 +14,13 @@ async function renderHome(ctx) {
   }
 
   if (!user.isTeamMember) {
+    const gate = await getApplicationSubmitGate(user);
+    if (!gate.allowed) {
+      return upsertBotMessage(ctx, gate.message, {
+        reply_markup: homeOnlyKeyboard().reply_markup,
+      });
+    }
+
     return upsertBotMessage(
       ctx,
       [

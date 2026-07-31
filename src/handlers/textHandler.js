@@ -3,7 +3,7 @@ const {
   setProfitPercent,
   setUserBio,
   ensureUser,
-  searchTeamMembers,
+  findUserByQuery,
 } = require("../services/userService");
 const { addProfitToUserByTelegramId } = require("../services/profitService");
 const { setGlobalWorkerPercent, setUsdRubRate } = require("../services/settingsService");
@@ -20,7 +20,9 @@ const {
   buildApprovedChannelSuffix,
 } = require("../services/withdrawalService");
 const { upsertBotMessage } = require("../utils/message");
-const { pe, btn } = require("../utils/emoji");
+const { pe } = require("../utils/emoji");
+const { formatMemberCardHtml } = require("../utils/adminMemberCard");
+const { getCurrencyContext } = require("../services/currencyService");
 const {
   withdrawMethodKeyboard,
   walletAmountCancelKeyboard,
@@ -30,6 +32,7 @@ const {
   adminBackKeyboard,
   adminCancelKeyboard,
   adminResultKeyboard,
+  memberActionKeyboard,
 } = require("../keyboards/admin");
 
 function formatMoney(value) {
@@ -367,22 +370,17 @@ function registerTextHandlers(bot) {
     }
 
     if (adminInput?.type === "search_user") {
-      const results = await searchTeamMembers(text);
-      if (results.length === 0) {
-        ctx.session.adminInput = null;
-        await upsertBotMessage(ctx, `${pe("error")} Пользователь не найден.`, {
-          reply_markup: adminBackKeyboard("admin:users").reply_markup,
+      const member = await findUserByQuery(text);
+      if (!member) {
+        await upsertBotMessage(ctx, `${pe("error")} Пользователь не найден. Введите @username или ID ещё раз.`, {
+          reply_markup: adminCancelKeyboard("admin:panel").reply_markup,
         });
         return;
       }
       ctx.session.adminInput = null;
-      const rows = results.map((member) => [
-        btn(`@${member.username || member.telegramId}`, `admin:member:${member.telegramId}`, "profile"),
-      ]);
-      rows.push([btn("Назад", "admin:users", "home")]);
-      rows.push([btn("В главное меню", "menu:home", "home")]);
-      await upsertBotMessage(ctx, `${pe("users")} Найденные пользователи:`, {
-        reply_markup: { inline_keyboard: rows },
+      const currencyCtx = await getCurrencyContext();
+      await upsertBotMessage(ctx, formatMemberCardHtml(member, currencyCtx), {
+        reply_markup: memberActionKeyboard(member.telegramId, member.isBanned).reply_markup,
       });
       return;
     }

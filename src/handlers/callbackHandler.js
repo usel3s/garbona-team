@@ -15,7 +15,6 @@ const {
 } = require("../keyboards/common");
 const {
   adminPanelKeyboard,
-  adminUsersKeyboard,
   adminCommsKeyboard,
   adminEconomyKeyboard,
   adminCurrencyKeyboard,
@@ -54,6 +53,7 @@ const {
   listApplications,
   decideApplication,
   formatApplicationCard,
+  getApplicationSubmitGate,
 } = require("../services/applicationService");
 const { getForm, removeFormQuestion } = require("../services/formService");
 const {
@@ -68,6 +68,7 @@ const { getProjectRulesLines } = require("../config/projectRules");
 const { logger } = require("../utils/logger");
 const { upsertBotMessage } = require("../utils/message");
 const { pe, btn } = require("../utils/emoji");
+const { formatMemberCardHtml } = require("../utils/adminMemberCard");
 const ProfitTransaction = require("../models/ProfitTransaction");
 const User = require("../models/User");
 const {
@@ -80,6 +81,7 @@ const {
   getCurrencyContext,
   formatDisplayAmount,
 } = require("../services/currencyService");
+const { seedManualsThread, manualsChatId } = require("../services/manualsThreadService");
 const { getAdminDashboardStats } = require("../services/adminStatsService");
 
 function requireAdmin(ctx) {
@@ -122,14 +124,15 @@ async function renderAdminPanel(ctx) {
 }
 
 async function renderAdminUsers(ctx) {
+  ctx.session.adminInput = { type: "search_user" };
   await upsertBotMessage(
     ctx,
     [
       `${pe("users")} <b>Участники</b>`,
       "",
-      "Поиск и управление воркерами команды.",
+      "Введите <b>@username</b> или Telegram <b>ID</b> пользователя.",
     ].join("\n"),
-    { reply_markup: adminUsersKeyboard().reply_markup }
+    { reply_markup: adminCancelKeyboard("admin:panel").reply_markup }
   );
 }
 
@@ -516,12 +519,36 @@ function registerCallbackHandlers(bot) {
 
   bot.action("menu:apply", async (ctx) => {
     await ctx.answerCbQuery();
+    const user = await ensureUser(ctx.from);
+    const gate = await getApplicationSubmitGate(user);
+    if (!gate.allowed) {
+      await upsertBotMessage(ctx, gate.message, {
+        reply_markup: homeOnlyKeyboard().reply_markup,
+      });
+      return;
+    }
     await upsertBotMessage(ctx, getProjectRulesLines().join("\n"), {
       reply_markup: rulesAcceptKeyboard().reply_markup,
     });
   });
 
   bot.action("app:rules_accept", async (ctx) => {
+    const user = await ensureUser(ctx.from);
+    const gate = await getApplicationSubmitGate(user);
+    if (!gate.allowed) {
+      await ctx.answerCbQuery("Подача недоступна", { show_alert: true });
+      try {
+        await ctx.deleteMessage();
+        if (ctx.session?.ui) ctx.session.ui.messageId = null;
+      } catch (_) {
+        /* ignore */
+      }
+      await upsertBotMessage(ctx, gate.message, {
+        reply_markup: homeOnlyKeyboard().reply_markup,
+      });
+      return;
+    }
+
     try {
       await ctx.deleteMessage();
       if (ctx.session?.ui) {
@@ -966,15 +993,46 @@ function registerCallbackHandlers(bot) {
     await ctx.scene.enter("broadcastScene");
   });
 
+  bot.action("admin:manuals_thread", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    try {
+      const result = await seedManualsThread(ctx.telegram);
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("success")} <b>Тред мануалов создан</b>`,
+          "",
+          `Чат: <code>${result.chatId}</code>`,
+          `Thread ID: <code>${result.threadId}</code>`,
+          `Ссылка на тред: ${result.threadLink}`,
+          `Документация: ${result.docsUrl}`,
+          result.pinned ? "Сообщение закреплено." : "Закрепить не удалось (проверь права).",
+        ].join("\n"),
+        { reply_markup: adminResultKeyboard("admin:comms").reply_markup }
+      );
+    } catch (e) {
+      const desc = e?.response?.description || e.message || "ошибка";
+      logger.warn("admin:manuals_thread failed", desc);
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("error")} <b>Не удалось создать тред</b>`,
+          "",
+          String(desc),
+          "",
+          `Чат мануалов: <code>${manualsChatId()}</code>`,
+          "Добавь бота в этот форум-чат админом с правом управлять топиками и писать сообщения.",
+        ].join("\n"),
+        { reply_markup: adminResultKeyboard("admin:comms").reply_markup }
+      );
+    }
+  });
+
   bot.action("admin:search", async (ctx) => {
     if (!requireAdmin(ctx)) return;
     await ctx.answerCbQuery();
-    ctx.session.adminInput = { type: "search_user" };
-    await upsertBotMessage(
-      ctx,
-      `${pe("users")} Введите Telegram ID или username пользователя для поиска.`,
-      { reply_markup: adminCancelKeyboard("admin:users").reply_markup }
-    );
+    await renderAdminUsers(ctx);
   });
 
   bot.action("admin:global_percent", async (ctx) => {
@@ -1000,22 +1058,9 @@ function registerCallbackHandlers(bot) {
 
     await ctx.answerCbQuery();
     const currencyCtx = await getCurrencyContext();
-    await upsertBotMessage(
-      ctx,
-      [
-        `${pe("profile")} <b>Управление пользователем</b>`,
-        `<b>ID:</b> <code>${member.telegramId}</code>`,
-        `<b>Username:</b> @${member.username || "unknown"}`,
-        `<b>Роль:</b> ${member.role}`,
-        `<b>В команде:</b> ${member.isTeamMember ? "Да" : "Нет"}`,
-        `<b>Заблокирован:</b> ${member.isBanned ? "Да" : "Нет"}`,
-        `<b>Профиты:</b> ${formatDisplayAmount(member.totalProfit || 0, currencyCtx)}`,
-        `<b>Процент:</b> ${member.profitPercent}%`,
-      ].join("\n"),
-      {
-        reply_markup: memberActionKeyboard(telegramId, member.isBanned).reply_markup,
-      }
-    );
+    await upsertBotMessage(ctx, formatMemberCardHtml(member, currencyCtx), {
+      reply_markup: memberActionKeyboard(telegramId, member.isBanned).reply_markup,
+    });
   });
 
   bot.action(/^admin:kick:(.+)$/, async (ctx) => {

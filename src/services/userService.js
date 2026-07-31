@@ -97,6 +97,23 @@ async function searchTeamMembers(query) {
     .limit(20);
 }
 
+/** Точное совпадение по ID/username, иначе первый результат поиска. */
+async function findUserByQuery(query) {
+  const results = await searchTeamMembers(query);
+  if (!results.length) return null;
+
+  const q = String(query || "")
+    .trim()
+    .replace(/^@/, "");
+  if (/^\d+$/.test(q)) {
+    return results.find((u) => String(u.telegramId) === q) || results[0];
+  }
+
+  const needle = q.toLowerCase();
+  const exact = results.find((u) => String(u.username || "").toLowerCase() === needle);
+  return exact || results[0];
+}
+
 module.exports = {
   ensureUser,
   isAdminTelegramId,
@@ -108,4 +125,5 @@ module.exports = {
   setUserBio,
   toggleAnonymous,
   searchTeamMembers,
+  findUserByQuery,
 };

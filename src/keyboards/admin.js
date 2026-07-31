@@ -25,6 +25,7 @@ function adminCommsKeyboard() {
       btn("Рассылка", "admin:broadcast", "broadcast"),
       btn("Postbot", "admin:postbot", "bot"),
     ],
+    [btn("Тред мануалов", "admin:manuals_thread", "file")],
     [btn("Назад", "admin:panel", "home")],
   ]);
 }
