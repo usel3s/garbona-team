@@ -8,6 +8,7 @@ const {
   settingsCancelKeyboard,
   topWorkersKeyboard,
   walletKeyboard,
+  profitsKeyboard,
   walletAmountCancelKeyboard,
   withdrawMethodKeyboard,
   payoutModerationKeyboard,
@@ -28,14 +29,16 @@ const {
   getUserByTelegramId,
   toggleAnonymous,
 } = require("../services/userService");
-const { getUserProfitStatsByTelegramId } = require("../services/profitService");
+const {
+  getUserProfitStatsByTelegramId,
+  getProfitDashboard,
+} = require("../services/profitService");
 const {
   getAvailableUsd,
   hasPendingRequest,
   createWithdrawalRequest,
   setAwaitingPayoutLink,
   rejectPayout,
-  listUserRequests,
   buildChannelMessageHtml,
   buildRejectedChannelSuffix,
   attachChannelMeta,
@@ -53,7 +56,16 @@ const { upsertBotMessage } = require("../utils/message");
 const { pe, btn } = require("../utils/emoji");
 const ProfitTransaction = require("../models/ProfitTransaction");
 const User = require("../models/User");
-const { getGlobalWorkerPercent } = require("../services/settingsService");
+const {
+  getGlobalWorkerPercent,
+  getDisplayCurrency,
+  toggleDisplayCurrency,
+  getUsdRubRate,
+} = require("../services/settingsService");
+const {
+  getCurrencyContext,
+  formatDisplayAmount,
+} = require("../services/currencyService");
 
 function requireAdmin(ctx) {
   if (!isAdminTelegramId(ctx.from.id)) {
@@ -76,8 +88,14 @@ function periodLabel(period) {
   return map[period] || map.all;
 }
 
-function formatMoney(value) {
-  return `$${Number(value || 0).toFixed(2)}`;
+async function renderAdminPanel(ctx) {
+  const [globalPercent, currency] = await Promise.all([
+    getGlobalWorkerPercent(80),
+    getDisplayCurrency("USD"),
+  ]);
+  await upsertBotMessage(ctx, `${pe("code")} <b>Админ-панель</b>`, {
+    reply_markup: adminPanelKeyboard(globalPercent, currency).reply_markup,
+  });
 }
 
 async function getProjectProfitStats() {
@@ -140,6 +158,7 @@ async function handleAboutProtectedChannelClick(ctx, channelKey) {
 
 async function renderProfile(ctx, period = "all") {
   const user = await ensureUser(ctx.from);
+  const currencyCtx = await getCurrencyContext();
   const roleLabel =
     user.role === "admin" ? "Администратор" : user.isTeamMember ? "Воркер" : "Пользователь";
   const daysWithTeam = Math.max(
@@ -158,7 +177,7 @@ async function renderProfile(ctx, period = "all") {
   ];
 
   if (operationsCount > 0) {
-    lines.push(` ┖ Профит: ${formatMoney(periodProfit)}`);
+    lines.push(` ┖ Профит: ${formatDisplayAmount(periodProfit, currencyCtx)}`);
     lines.push(` ┖ Операций: ${operationsCount}`);
   } else {
     lines.push(" ┖ Профиты отсутствуют.");
@@ -211,6 +230,7 @@ function topPeriodTopic(period) {
 async function renderTopWorkers(ctx, period = "all") {
   const since = period === "all" ? null : periodSince(period);
   const match = since ? { createdAt: { $gte: since } } : {};
+  const currencyCtx = await getCurrencyContext();
 
   const agg = await ProfitTransaction.aggregate([
     { $match: match },
@@ -255,11 +275,13 @@ async function renderTopWorkers(ctx, period = "all") {
     rows.forEach((r, i) => {
       const icon = medals[i] || pe("users");
       const countPart = r.count > 0 ? ` — ${r.count} шт.` : "";
-      lines.push(`${icon} ${r.username} — ${formatMoney(r.total)}${countPart}`);
+      lines.push(
+        `${icon} ${r.username} — ${formatDisplayAmount(r.total, currencyCtx)}${countPart}`
+      );
     });
     lines.push("");
     lines.push(
-      `Итого за <b>${topic}</b>: ${formatMoney(totalAmount)}${totalCount ? ` — ${totalCount} шт.` : ""}`
+      `Итого за <b>${topic}</b>: ${formatDisplayAmount(totalAmount, currencyCtx)}${totalCount ? ` — ${totalCount} шт.` : ""}`
     );
   }
 
@@ -325,22 +347,37 @@ function registerCallbackHandlers(bot) {
   bot.action("profile:profits", async (ctx) => {
     await ctx.answerCbQuery();
     const user = await ensureUser(ctx.from);
-    await upsertBotMessage(
-      ctx,
-      [
-        `${pe("coins")} <b>Мои профиты</b>`,
-        "",
-        `Общий профит: ${formatMoney(user.totalProfit)}`,
-        `Твоя доля: ${user.profitPercent}%`,
-      ].join("\n"),
-      { reply_markup: profileKeyboard("all").reply_markup }
-    );
+    const currencyCtx = await getCurrencyContext();
+    const dash = await getProfitDashboard(user);
+
+    const lines = [
+      `${pe("coins")} <b>Профиты</b>`,
+      "",
+      `Ник: <b>${dash.nickname}</b>`,
+      `С нами: <b>${dash.days}</b> дн.`,
+    ];
+
+    if (dash.count > 0) {
+      lines.push(`Всего: <b>${formatDisplayAmount(dash.totalShare, currencyCtx)}</b>`);
+      lines.push(`Макс. профит: <b>${formatDisplayAmount(dash.maxShare, currencyCtx)}</b>`);
+      lines.push(`Операций: <b>${dash.count}</b>`);
+      lines.push("");
+      lines.push("Нажмите на кнопку, чтобы посмотреть статистику за период.");
+    } else {
+      lines.push("");
+      lines.push("Профиты отсутствуют. Когда появятся начисления — статистика будет здесь.");
+    }
+
+    await upsertBotMessage(ctx, lines.join("\n"), {
+      reply_markup: profitsKeyboard().reply_markup,
+    });
   });
 
   bot.action("profile:wallet", async (ctx) => {
     await ctx.answerCbQuery();
     if (ctx.session) ctx.session.walletWithdraw = null;
     const user = await ensureUser(ctx.from);
+    const currencyCtx = await getCurrencyContext();
     const available = await getAvailableUsd(user);
     const minW = env.walletMinWithdrawalUsd;
     const canWithdraw =
@@ -350,8 +387,8 @@ function registerCallbackHandlers(bot) {
       [
         `${pe("wallet")} <b>Кошелёк</b>`,
         "",
-        `${pe("coins")} <b>Баланс:</b> ${formatMoney(available)}`,
-        `${pe("info")} Вывод от ${formatMoney(minW)}`,
+        `${pe("coins")} <b>Баланс:</b> ${formatDisplayAmount(available, currencyCtx)}`,
+        `${pe("info")} Вывод от ${formatDisplayAmount(minW, currencyCtx)}`,
       ].join("\n"),
       {
         reply_markup: walletKeyboard({ showWithdraw: canWithdraw }).reply_markup,
@@ -361,10 +398,13 @@ function registerCallbackHandlers(bot) {
 
   bot.action("wallet:withdraw", async (ctx) => {
     const user = await ensureUser(ctx.from);
+    const currencyCtx = await getCurrencyContext();
     const available = await getAvailableUsd(user);
     const minW = env.walletMinWithdrawalUsd;
     if (available + 1e-9 < minW) {
-      await ctx.answerCbQuery(`Минимум ${formatMoney(minW)}`, { show_alert: true });
+      await ctx.answerCbQuery(`Минимум ${formatDisplayAmount(minW, currencyCtx)}`, {
+        show_alert: true,
+      });
       return;
     }
     if (await hasPendingRequest(user.telegramId)) {
@@ -378,8 +418,10 @@ function registerCallbackHandlers(bot) {
       [
         `${pe("transfer")} Введите <b>сумму вывода в долларах США ($)</b>.`,
         "",
-        `Доступно: <b>${formatMoney(available)}</b>`,
-        `Минимум: <b>${formatMoney(minW)}</b>`,
+        `Доступно: <b>${formatDisplayAmount(available, currencyCtx)}</b>`,
+        `Минимум: <b>${formatDisplayAmount(minW, currencyCtx)}</b>`,
+        "",
+        "<i>Ввод суммы всегда в USD (внутренняя валюта баланса).</i>",
       ].join("\n"),
       {
         reply_markup: walletAmountCancelKeyboard().reply_markup,
@@ -389,34 +431,28 @@ function registerCallbackHandlers(bot) {
 
   bot.action("wallet:history", async (ctx) => {
     await ctx.answerCbQuery();
-    const user = await ensureUser(ctx.from);
-    const list = await listUserRequests(user.telegramId, 12);
-    const available = await getAvailableUsd(user);
-    const minW = env.walletMinWithdrawalUsd;
-    const canWithdraw =
-      available >= minW && !(await hasPendingRequest(user.telegramId));
-    const statusRu = {
-      pending: "ожидает",
-      awaiting_payout_link: "ожидает ссылку",
-      approved: "выплачено",
-      rejected: "отклонено",
-    };
-    if (!list.length) {
-      await upsertBotMessage(ctx, `${pe("file")} История заявок пуста.`, {
-        reply_markup: walletKeyboard({ showWithdraw: canWithdraw }).reply_markup,
-      });
-      return;
-    }
-    const lines = [`${pe("file")} <b>История заявок</b>`, ""];
-    for (const r of list) {
-      const st = statusRu[r.status] || r.status;
-      lines.push(
-        `• <b>$${Number(r.amountUsd).toFixed(2)}</b> — ${methodLabel(r.method)} — ${st} — ${new Date(r.createdAt).toLocaleString("ru-RU")}`
-      );
-    }
-    await upsertBotMessage(ctx, lines.join("\n"), {
-      reply_markup: walletKeyboard({ showWithdraw: canWithdraw }).reply_markup,
-    });
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("file")} <b>История транзакций</b>`,
+        "",
+        "Нажмите кнопку ниже и выберите операцию из inline-списка.",
+      ].join("\n"),
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "Открыть историю",
+                switch_inline_query_current_chat: "wallet",
+                icon_custom_emoji_id: "5870528606328852614",
+              },
+            ],
+            [{ text: "Назад", callback_data: "profile:wallet", icon_custom_emoji_id: "5769126056262898415" }],
+          ],
+        },
+      }
+    );
   });
 
   bot.action(/^wallet:method:(xRocketr|cryptobot|usdt_ton)$/, async (ctx) => {
@@ -438,12 +474,13 @@ function registerCallbackHandlers(bot) {
       });
       await attachChannelMeta(doc._id, msg.chat.id, msg.message_id);
       await ctx.answerCbQuery("Заявка отправлена");
+      const currencyCtx = await getCurrencyContext();
       await upsertBotMessage(
         ctx,
         [
           `${pe("success")} <b>Заявка на выплату создана</b>`,
           "",
-          `Сумма: ${formatMoney(amount)}`,
+          `Сумма: ${formatDisplayAmount(amount, currencyCtx)}`,
           `Способ: ${methodLabel(method)}`,
           "",
           "Ожидайте подтверждения администратора.",
@@ -542,13 +579,14 @@ function registerCallbackHandlers(bot) {
     await ctx.answerCbQuery();
     const projectStats = await getProjectProfitStats();
     const globalPercent = await getGlobalWorkerPercent(80);
+    const currencyCtx = await getCurrencyContext();
     await upsertBotMessage(
       ctx,
       [
         `${pe("info")} <b>Информация о проекте Garbona</b>`,
         "└ Дата открытия: 08.04.2026",
         "",
-        `${pe("coins")} Сумма профитов: <b>${Math.round(projectStats.totalProfit)}$</b>`,
+        `${pe("coins")} Сумма профитов: <b>${formatDisplayAmount(projectStats.totalProfit, currencyCtx)}</b>`,
         `${pe("statistics")} Количество профитов: <b>${projectStats.count}</b>`,
         "",
         `${pe("analytics")} <b>Процент выплат:</b>`,
@@ -636,16 +674,38 @@ function registerCallbackHandlers(bot) {
       ctx.session.walletWithdraw = null;
     }
     await ctx.answerCbQuery();
-    const globalPercent = await getGlobalWorkerPercent(80);
-    await upsertBotMessage(ctx, `${pe("code")} <b>Админ-панель</b>`, {
-      reply_markup: adminPanelKeyboard(globalPercent).reply_markup,
-    });
+    await renderAdminPanel(ctx);
+  });
+
+  bot.action("admin:currency:toggle", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const next = await toggleDisplayCurrency();
+    await ctx.answerCbQuery(`Валюта: ${next === "RUB" ? "₽ RUB" : "$ USD"}`);
+    await renderAdminPanel(ctx);
+  });
+
+  bot.action("admin:currency:rate", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const current = await getUsdRubRate(90);
+    ctx.session.adminInput = { type: "currency_rate" };
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      `${pe("analytics")} Текущий курс: <b>1 USD = ${current} RUB</b>\nВведите новый курс (число больше 0).`,
+      { reply_markup: adminCancelKeyboard().reply_markup }
+    );
   });
 
   bot.action("admin:postbot", async (ctx) => {
     if (!requireAdmin(ctx)) return;
     await ctx.answerCbQuery();
     await ctx.scene.enter("postbotScene");
+  });
+
+  bot.action("admin:broadcast", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    await ctx.scene.enter("broadcastScene");
   });
 
   bot.action("admin:search", async (ctx) => {
@@ -681,6 +741,7 @@ function registerCallbackHandlers(bot) {
     }
 
     await ctx.answerCbQuery();
+    const currencyCtx = await getCurrencyContext();
     await upsertBotMessage(
       ctx,
       [
@@ -690,7 +751,7 @@ function registerCallbackHandlers(bot) {
         `<b>Роль:</b> ${member.role}`,
         `<b>В команде:</b> ${member.isTeamMember ? "Да" : "Нет"}`,
         `<b>Заблокирован:</b> ${member.isBanned ? "Да" : "Нет"}`,
-        `<b>Профиты:</b> ${formatMoney(member.totalProfit || 0)}`,
+        `<b>Профиты:</b> ${formatDisplayAmount(member.totalProfit || 0, currencyCtx)}`,
         `<b>Процент:</b> ${member.profitPercent}%`,
       ].join("\n"),
       {

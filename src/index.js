@@ -7,6 +7,7 @@ const { registerTextHandlers } = require("./handlers/textHandler");
 const { registerInlineHandlers } = require("./handlers/inlineHandler");
 const { applicationScene } = require("./scenes/applicationScene");
 const { postbotScene } = require("./scenes/postbotScene");
+const { broadcastScene } = require("./scenes/broadcastScene");
 const { logger } = require("./utils/logger");
 const { pe } = require("./utils/emoji");
 const {
@@ -20,7 +21,7 @@ async function bootstrap() {
   await connectDatabase();
 
   const bot = new Telegraf(env.botToken);
-  const stage = new Scenes.Stage([applicationScene, postbotScene]);
+  const stage = new Scenes.Stage([applicationScene, postbotScene, broadcastScene]);
 
   bot.use(session());
 

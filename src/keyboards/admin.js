@@ -1,11 +1,15 @@
 const { Markup } = require("telegraf");
 const { btn } = require("../utils/emoji");
 
-function adminPanelKeyboard(globalPercent = 80) {
+function adminPanelKeyboard(globalPercent = 80, currency = "USD") {
+  const currencyLabel = currency === "RUB" ? "₽ RUB" : "$ USD";
   return Markup.inlineKeyboard([
     [btn("Поиск участника", "admin:search", "users")],
     [btn("Postbot", "admin:postbot", "bot")],
+    [btn("Рассылка", "admin:broadcast", "broadcast")],
     [btn(`Глобальный %: ${globalPercent}%`, "admin:global_percent", "analytics")],
+    [btn(`Валюта: ${currencyLabel}`, "admin:currency:toggle", "coins")],
+    [btn("Курс USD→RUB", "admin:currency:rate", "analytics")],
     [btn("Назад", "menu:home", "home")],
   ]);
 }

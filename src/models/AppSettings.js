@@ -4,6 +4,7 @@ const appSettingsSchema = new mongoose.Schema(
   {
     key: { type: String, required: true, unique: true, index: true },
     valueNumber: { type: Number, default: null },
+    valueString: { type: String, default: null },
   },
   { timestamps: true }
 );

@@ -6,7 +6,7 @@ const {
   searchTeamMembers,
 } = require("../services/userService");
 const { addProfitToUserByTelegramId } = require("../services/profitService");
-const { setGlobalWorkerPercent } = require("../services/settingsService");
+const { setGlobalWorkerPercent, setUsdRubRate } = require("../services/settingsService");
 const { env } = require("../config/env");
 const {
   getAvailableUsd,
@@ -268,6 +268,32 @@ function registerTextHandlers(bot) {
         `${pe("success")} Глобальный процент воркера обновлён: <b>${updated}%</b>\nПрименено ко всем пользователям.`,
         { reply_markup: adminResultKeyboard().reply_markup }
       );
+      return;
+    }
+
+    if (adminInput?.type === "currency_rate") {
+      const rate = Number(text.replace(",", ".").replace(/\s/g, ""));
+      if (!Number.isFinite(rate) || rate <= 0) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Введите корректный курс (число больше 0).`,
+          { reply_markup: adminCancelKeyboard().reply_markup }
+        );
+        return;
+      }
+      try {
+        const updated = await setUsdRubRate(rate);
+        ctx.session.adminInput = null;
+        await upsertBotMessage(
+          ctx,
+          `${pe("success")} Курс обновлён: <b>1 USD = ${updated} RUB</b>`,
+          { reply_markup: adminResultKeyboard().reply_markup }
+        );
+      } catch (e) {
+        await upsertBotMessage(ctx, `${pe("error")} ${e.message}`, {
+          reply_markup: adminCancelKeyboard().reply_markup,
+        });
+      }
       return;
     }
 

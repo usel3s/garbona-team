@@ -1,5 +1,5 @@
 const { Markup } = require("telegraf");
-const { btn, urlBtn } = require("../utils/emoji");
+const { btn, urlBtn, switchInlineBtn } = require("../utils/emoji");
 
 function applicationStartKeyboard() {
   return Markup.inlineKeyboard([[btn("Подать заявку", "menu:apply", "notification")]]);
@@ -50,12 +50,29 @@ function profileKeyboard(selectedPeriod = "all") {
 }
 
 function walletKeyboard({ showWithdraw = false } = {}) {
-  const rows = [[btn("История транзакций", "wallet:history", "file")]];
+  const rows = [
+    [
+      {
+        text: "История транзакций",
+        switch_inline_query_current_chat: "wallet",
+        icon_custom_emoji_id: "5870528606328852614",
+      },
+    ],
+  ];
   if (showWithdraw) {
     rows.push([btn("Вывод средств", "wallet:withdraw", "transfer")]);
   }
   rows.push([btn("Назад", "menu:profile", "profile")]);
   return Markup.inlineKeyboard(rows);
+}
+
+function profitsKeyboard() {
+  return Markup.inlineKeyboard([
+    [switchInlineBtn("История моих профитов", "profits", "coins")],
+    [switchInlineBtn("История профитов помесячно", "profits?group_by=month", "calendar")],
+    [switchInlineBtn("История профитов посуточно", "profits?group_by=day", "time")],
+    [btn("Назад", "menu:profile", "profile")],
+  ]);
 }
 
 function withdrawMethodKeyboard() {
@@ -169,6 +186,7 @@ module.exports = {
   participantPanelKeyboard,
   profileKeyboard,
   walletKeyboard,
+  profitsKeyboard,
   withdrawMethodKeyboard,
   walletAmountCancelKeyboard,
   payoutModerationKeyboard,

@@ -107,4 +107,15 @@ function urlBtn(text, url, emojiKey) {
   return button;
 }
 
-module.exports = { E, FALLBACK, pe, btn, urlBtn };
+function switchInlineBtn(text, query, emojiKey) {
+  const button = {
+    text,
+    switch_inline_query_current_chat: query,
+  };
+  if (emojiKey && E[emojiKey]) {
+    button.icon_custom_emoji_id = E[emojiKey];
+  }
+  return button;
+}
+
+module.exports = { E, FALLBACK, pe, btn, urlBtn, switchInlineBtn };
