@@ -4,6 +4,7 @@ const { isAdminTelegramId } = require("../services/userService");
 const {
   getGlobalWorkerPercent,
   getDisplayCurrency,
+  getUsdRubRate,
 } = require("../services/settingsService");
 const {
   extractTextDraft,
@@ -233,13 +234,21 @@ scene.action("broadcast:cancel", async (ctx) => {
   await deleteUiAndPreview(ctx);
   await leaveToAdmin(ctx);
 
-  const [globalPercent, currency] = await Promise.all([
+  const [globalPercent, currency, rate] = await Promise.all([
     getGlobalWorkerPercent(80),
     getDisplayCurrency("USD"),
+    getUsdRubRate(90),
   ]);
-  await upsertBotMessage(ctx, `${pe("code")} <b>Админ-панель</b>`, {
-    reply_markup: adminPanelKeyboard(globalPercent, currency).reply_markup,
-  });
+  const currencyLabel = currency === "RUB" ? "₽ RUB" : "$ USD";
+  await upsertBotMessage(
+    ctx,
+    [
+      `${pe("code")} <b>Админ-панель</b>`,
+      "",
+      `<i>${currencyLabel} · курс ${rate} · ${globalPercent}%</i>`,
+    ].join("\n"),
+    { reply_markup: adminPanelKeyboard().reply_markup }
+  );
 });
 
 scene.action("broadcast:skip_media", async (ctx) => {

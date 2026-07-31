@@ -172,8 +172,17 @@ function registerTextHandlers(bot) {
     }
 
     if (!text) {
+      const cancelBack =
+        adminInput?.type === "search_user" ||
+        adminInput?.type === "profit" ||
+        adminInput?.type === "percent" ||
+        compose
+          ? "admin:users"
+          : adminInput?.type === "global_percent" || adminInput?.type === "currency_rate"
+            ? "admin:economy"
+            : "admin:panel";
       await upsertBotMessage(ctx, `${pe("error")} Пустое сообщение. Повторите ввод.`, {
-        reply_markup: adminCancelKeyboard().reply_markup,
+        reply_markup: adminCancelKeyboard(cancelBack).reply_markup,
       });
       return;
     }
@@ -184,7 +193,7 @@ function registerTextHandlers(bot) {
         await upsertBotMessage(
           ctx,
           `${pe("error")} Введите корректную сумму профита (число больше 0).`,
-          { reply_markup: adminCancelKeyboard().reply_markup }
+          { reply_markup: adminCancelKeyboard("admin:users").reply_markup }
         );
         return;
       }
@@ -197,7 +206,7 @@ function registerTextHandlers(bot) {
       if (!result) {
         ctx.session.adminInput = null;
         await upsertBotMessage(ctx, `${pe("error")} Пользователь не найден.`, {
-          reply_markup: adminBackKeyboard().reply_markup,
+          reply_markup: adminBackKeyboard("admin:users").reply_markup,
         });
         return;
       }
@@ -216,7 +225,7 @@ function registerTextHandlers(bot) {
       await upsertBotMessage(
         ctx,
         `${pe("success")} Начислено ${formatMoney(amount)} пользователю <code>${result.user.telegramId}</code>.\nДоля воркера: ${formatMoney(result.workerShare)}.`,
-        { reply_markup: adminResultKeyboard().reply_markup }
+        { reply_markup: adminResultKeyboard("admin:users").reply_markup }
       );
       ctx.session.adminInput = null;
       return;
@@ -228,7 +237,7 @@ function registerTextHandlers(bot) {
         await upsertBotMessage(
           ctx,
           `${pe("error")} Процент должен быть числом от 1 до 100.`,
-          { reply_markup: adminCancelKeyboard().reply_markup }
+          { reply_markup: adminCancelKeyboard("admin:users").reply_markup }
         );
         return;
       }
@@ -237,7 +246,7 @@ function registerTextHandlers(bot) {
       if (!updatedUser) {
         ctx.session.adminInput = null;
         await upsertBotMessage(ctx, `${pe("error")} Пользователь не найден.`, {
-          reply_markup: adminBackKeyboard().reply_markup,
+          reply_markup: adminBackKeyboard("admin:users").reply_markup,
         });
         return;
       }
@@ -245,7 +254,7 @@ function registerTextHandlers(bot) {
       await upsertBotMessage(
         ctx,
         `${pe("success")} Процент воркера для <code>${updatedUser.telegramId}</code> обновлён: ${updatedUser.profitPercent}%.`,
-        { reply_markup: adminResultKeyboard().reply_markup }
+        { reply_markup: adminResultKeyboard("admin:users").reply_markup }
       );
       ctx.session.adminInput = null;
       return;
@@ -257,7 +266,7 @@ function registerTextHandlers(bot) {
         await upsertBotMessage(
           ctx,
           `${pe("error")} Глобальный процент должен быть числом от 1 до 100.`,
-          { reply_markup: adminCancelKeyboard().reply_markup }
+          { reply_markup: adminCancelKeyboard("admin:economy").reply_markup }
         );
         return;
       }
@@ -266,7 +275,7 @@ function registerTextHandlers(bot) {
       await upsertBotMessage(
         ctx,
         `${pe("success")} Глобальный процент воркера обновлён: <b>${updated}%</b>\nПрименено ко всем пользователям.`,
-        { reply_markup: adminResultKeyboard().reply_markup }
+        { reply_markup: adminResultKeyboard("admin:economy").reply_markup }
       );
       return;
     }
@@ -277,7 +286,7 @@ function registerTextHandlers(bot) {
         await upsertBotMessage(
           ctx,
           `${pe("error")} Введите корректный курс (число больше 0).`,
-          { reply_markup: adminCancelKeyboard().reply_markup }
+          { reply_markup: adminCancelKeyboard("admin:economy").reply_markup }
         );
         return;
       }
@@ -287,11 +296,11 @@ function registerTextHandlers(bot) {
         await upsertBotMessage(
           ctx,
           `${pe("success")} Курс обновлён: <b>1 USD = ${updated} RUB</b>`,
-          { reply_markup: adminResultKeyboard().reply_markup }
+          { reply_markup: adminResultKeyboard("admin:economy").reply_markup }
         );
       } catch (e) {
         await upsertBotMessage(ctx, `${pe("error")} ${e.message}`, {
-          reply_markup: adminCancelKeyboard().reply_markup,
+          reply_markup: adminCancelKeyboard("admin:economy").reply_markup,
         });
       }
       return;
@@ -302,7 +311,7 @@ function registerTextHandlers(bot) {
       if (results.length === 0) {
         ctx.session.adminInput = null;
         await upsertBotMessage(ctx, `${pe("error")} Пользователь не найден.`, {
-          reply_markup: adminBackKeyboard().reply_markup,
+          reply_markup: adminBackKeyboard("admin:users").reply_markup,
         });
         return;
       }
@@ -310,7 +319,7 @@ function registerTextHandlers(bot) {
       const rows = results.map((member) => [
         btn(`@${member.username || member.telegramId}`, `admin:member:${member.telegramId}`, "profile"),
       ]);
-      rows.push([btn("В админ-панель", "admin:panel", "code")]);
+      rows.push([btn("Назад", "admin:users", "home")]);
       rows.push([btn("В главное меню", "menu:home", "home")]);
       await upsertBotMessage(ctx, `${pe("users")} Найденные пользователи:`, {
         reply_markup: { inline_keyboard: rows },

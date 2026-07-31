@@ -5,7 +5,7 @@ function postbotHomeKeyboard() {
   return Markup.inlineKeyboard([
     [btn("Создать пост", "postbot:create", "edit")],
     [btn("Сохранённые посты", "postbot:saved", "file")],
-    [btn("Назад", "admin:panel", "home")],
+    [btn("Назад", "admin:comms", "home")],
   ]);
 }
 

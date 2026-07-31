@@ -163,19 +163,21 @@ function settingsKeyboard(isNicknameOpen) {
   ]);
 }
 
-function topWorkersKeyboard(selectedPeriod = "all") {
+function topWorkersKeyboard(selectedPeriod = "all", options = {}) {
   const label = (period, text) => (selectedPeriod === period ? `• ${text} •` : text);
+  const back = options.back || "menu:home";
+  const periodPrefix = options.periodPrefix || "top:period";
 
   return Markup.inlineKeyboard([
     [
-      btn(label("all", "За всё время"), "top:period:all", "calendar"),
-      btn(label("24h", "За 24 часа"), "top:period:24h", "time"),
+      btn(label("all", "За всё время"), `${periodPrefix}:all`, "calendar"),
+      btn(label("24h", "За 24 часа"), `${periodPrefix}:24h`, "time"),
     ],
     [
-      btn(label("7d", "За 7 дней"), "top:period:7d", "calendar"),
-      btn(label("30d", "За 30 дней"), "top:period:30d", "calendar"),
+      btn(label("7d", "За 7 дней"), `${periodPrefix}:7d`, "calendar"),
+      btn(label("30d", "За 30 дней"), `${periodPrefix}:30d`, "calendar"),
     ],
-    [btn("Назад", "menu:home", "home")],
+    [btn("Назад", back, "home")],
   ]);
 }
 

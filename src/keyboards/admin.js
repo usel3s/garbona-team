@@ -1,45 +1,91 @@
 const { Markup } = require("telegraf");
 const { btn } = require("../utils/emoji");
 
-function adminPanelKeyboard(globalPercent = 80, currency = "USD") {
-  const currencyLabel = currency === "RUB" ? "₽ RUB" : "$ USD";
+/** Корень: только хабы */
+function adminPanelKeyboard() {
+  return Markup.inlineKeyboard([
+    [btn("Участники", "admin:users", "users")],
+    [btn("Коммуникация", "admin:comms", "broadcast")],
+    [btn("Экономика", "admin:economy", "coins")],
+    [btn("Статистика", "admin:stats", "statistics")],
+    [btn("В меню", "menu:home", "home")],
+  ]);
+}
+
+function adminUsersKeyboard() {
   return Markup.inlineKeyboard([
     [btn("Поиск участника", "admin:search", "users")],
-    [btn("Postbot", "admin:postbot", "bot")],
-    [btn("Рассылка", "admin:broadcast", "broadcast")],
+    [btn("Назад", "admin:panel", "home")],
+  ]);
+}
+
+function adminCommsKeyboard() {
+  return Markup.inlineKeyboard([
+    [
+      btn("Рассылка", "admin:broadcast", "broadcast"),
+      btn("Postbot", "admin:postbot", "bot"),
+    ],
+    [btn("Назад", "admin:panel", "home")],
+  ]);
+}
+
+function adminEconomyKeyboard(globalPercent = 80, currency = "USD") {
+  const currencyLabel = currency === "RUB" ? "₽ RUB" : "$ USD";
+  return Markup.inlineKeyboard([
     [btn(`Глобальный %: ${globalPercent}%`, "admin:global_percent", "analytics")],
-    [btn(`Валюта: ${currencyLabel}`, "admin:currency:toggle", "coins")],
+    [btn(`Валюта: ${currencyLabel}`, "admin:currency", "coins")],
     [btn("Курс USD→RUB", "admin:currency:rate", "analytics")],
-    [btn("Назад", "menu:home", "home")],
+    [btn("Назад", "admin:panel", "home")],
   ]);
 }
 
-/** Ожидание ввода в админке */
-function adminCancelKeyboard() {
+function adminCurrencyKeyboard(currency = "USD") {
+  const isUsd = currency !== "RUB";
   return Markup.inlineKeyboard([
-    [btn("Отменить", "admin:panel", "error")],
+    [
+      btn(isUsd ? "• USD •" : "USD", "admin:currency:set:USD", "coins"),
+      btn(!isUsd ? "• RUB •" : "RUB", "admin:currency:set:RUB", "coins"),
+    ],
+    [btn("Назад", "admin:economy", "home")],
+  ]);
+}
+
+function adminStatsKeyboard() {
+  return Markup.inlineKeyboard([
+    [btn("Топ воркеров", "admin:stats:top", "analytics")],
+    [btn("Назад", "admin:panel", "home")],
+  ]);
+}
+
+/** Ожидание ввода: backTo — куда вернуться при отмене */
+function adminCancelKeyboard(backTo = "admin:panel") {
+  return Markup.inlineKeyboard([
+    [btn("Отменить", backTo, "error")],
     [btn("В главное меню", "menu:home", "home")],
   ]);
 }
 
-/** Ошибка / «не найдено» — вернуться */
-function adminBackKeyboard() {
+function adminBackKeyboard(backTo = "admin:panel") {
   return Markup.inlineKeyboard([
-    [btn("Вернуться в админку", "admin:panel", "code")],
+    [btn("Назад", backTo, "home")],
     [btn("В главное меню", "menu:home", "home")],
   ]);
 }
 
-/** Успех / результат действия */
-function adminResultKeyboard() {
+function adminResultKeyboard(backTo = "admin:users") {
   return Markup.inlineKeyboard([
+    [btn("Назад", backTo, "home")],
     [btn("В админ-панель", "admin:panel", "code")],
-    [btn("В главное меню", "menu:home", "home")],
   ]);
 }
 
 function memberActionKeyboard(memberTelegramId, isBanned = false) {
   return Markup.inlineKeyboard([
+    [
+      btn("Начислить профит", `admin:profit:${memberTelegramId}`, "coins"),
+      btn("Процент воркера", `admin:percent:${memberTelegramId}`, "settings"),
+    ],
+    [btn("Отправить сообщение", `admin:msg:${memberTelegramId}`, "broadcast")],
     [
       btn("Кикнуть", `admin:kick:${memberTelegramId}`, "delete"),
       btn(
@@ -48,17 +94,17 @@ function memberActionKeyboard(memberTelegramId, isBanned = false) {
         isBanned ? "unlock" : "userBlocked"
       ),
     ],
-    [btn("Отправить сообщение", `admin:msg:${memberTelegramId}`, "broadcast")],
-    [
-      btn("Начислить профит", `admin:profit:${memberTelegramId}`, "coins"),
-      btn("Процент воркера", `admin:percent:${memberTelegramId}`, "settings"),
-    ],
-    [btn("В админ-панель", "admin:panel", "code")],
+    [btn("Назад", "admin:users", "home")],
   ]);
 }
 
 module.exports = {
   adminPanelKeyboard,
+  adminUsersKeyboard,
+  adminCommsKeyboard,
+  adminEconomyKeyboard,
+  adminCurrencyKeyboard,
+  adminStatsKeyboard,
   adminCancelKeyboard,
   adminBackKeyboard,
   adminResultKeyboard,

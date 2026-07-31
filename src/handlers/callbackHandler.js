@@ -16,6 +16,11 @@ const {
 } = require("../keyboards/common");
 const {
   adminPanelKeyboard,
+  adminUsersKeyboard,
+  adminCommsKeyboard,
+  adminEconomyKeyboard,
+  adminCurrencyKeyboard,
+  adminStatsKeyboard,
   memberActionKeyboard,
   adminCancelKeyboard,
   adminResultKeyboard,
@@ -59,7 +64,7 @@ const User = require("../models/User");
 const {
   getGlobalWorkerPercent,
   getDisplayCurrency,
-  toggleDisplayCurrency,
+  setDisplayCurrency,
   getUsdRubRate,
 } = require("../services/settingsService");
 const {
@@ -89,13 +94,97 @@ function periodLabel(period) {
 }
 
 async function renderAdminPanel(ctx) {
-  const [globalPercent, currency] = await Promise.all([
+  const [globalPercent, currency, rate] = await Promise.all([
     getGlobalWorkerPercent(80),
     getDisplayCurrency("USD"),
+    getUsdRubRate(90),
   ]);
-  await upsertBotMessage(ctx, `${pe("code")} <b>Админ-панель</b>`, {
-    reply_markup: adminPanelKeyboard(globalPercent, currency).reply_markup,
-  });
+  const currencyLabel = currency === "RUB" ? "₽ RUB" : "$ USD";
+  await upsertBotMessage(
+    ctx,
+    [
+      `${pe("code")} <b>Админ-панель</b>`,
+      "",
+      `<i>${currencyLabel} · курс ${rate} · ${globalPercent}%</i>`,
+    ].join("\n"),
+    { reply_markup: adminPanelKeyboard().reply_markup }
+  );
+}
+
+async function renderAdminUsers(ctx) {
+  await upsertBotMessage(
+    ctx,
+    [
+      `${pe("users")} <b>Участники</b>`,
+      "",
+      "Поиск и управление воркерами команды.",
+    ].join("\n"),
+    { reply_markup: adminUsersKeyboard().reply_markup }
+  );
+}
+
+async function renderAdminComms(ctx) {
+  await upsertBotMessage(
+    ctx,
+    [
+      `${pe("broadcast")} <b>Коммуникация</b>`,
+      "",
+      "Рассылка команде и конструктор постов.",
+    ].join("\n"),
+    { reply_markup: adminCommsKeyboard().reply_markup }
+  );
+}
+
+async function renderAdminEconomy(ctx) {
+  const [globalPercent, currency, rate] = await Promise.all([
+    getGlobalWorkerPercent(80),
+    getDisplayCurrency("USD"),
+    getUsdRubRate(90),
+  ]);
+  await upsertBotMessage(
+    ctx,
+    [
+      `${pe("coins")} <b>Экономика</b>`,
+      "",
+      `Валюта отображения: <b>${currency === "RUB" ? "RUB" : "USD"}</b>`,
+      `Курс: <b>1 USD = ${rate} RUB</b>`,
+      `Глобальный % воркера: <b>${globalPercent}%</b>`,
+    ].join("\n"),
+    { reply_markup: adminEconomyKeyboard(globalPercent, currency).reply_markup }
+  );
+}
+
+async function renderAdminCurrency(ctx) {
+  const currency = await getDisplayCurrency("USD");
+  await upsertBotMessage(
+    ctx,
+    [
+      `${pe("coins")} <b>Валюта отображения</b>`,
+      "",
+      `Сейчас: <b>${currency === "RUB" ? "RUB (₽)" : "USD ($)"}</b>`,
+      "Выберите валюту для сумм в боте.",
+    ].join("\n"),
+    { reply_markup: adminCurrencyKeyboard(currency).reply_markup }
+  );
+}
+
+async function renderAdminStats(ctx) {
+  const [projectStats, teamCount, currencyCtx] = await Promise.all([
+    getProjectProfitStats(),
+    User.countDocuments({ isTeamMember: true, isBanned: { $ne: true } }),
+    getCurrencyContext(),
+  ]);
+  await upsertBotMessage(
+    ctx,
+    [
+      `${pe("statistics")} <b>Статистика</b>`,
+      "",
+      `${pe("users")} Участников в команде: <b>${teamCount}</b>`,
+      `${pe("coins")} Профитов начислено: <b>${projectStats.count}</b>`,
+      `${pe("analytics")} Сумма профитов: <b>${formatDisplayAmount(projectStats.totalProfit, currencyCtx)}</b>`,
+    ].join("\n"),
+    { reply_markup: adminStatsKeyboard().reply_markup }
+  );
 }
 
 async function getProjectProfitStats() {
@@ -227,10 +316,12 @@ function topPeriodTopic(period) {
   return map[period] || map.all;
 }
 
-async function renderTopWorkers(ctx, period = "all") {
+async function renderTopWorkers(ctx, period = "all", options = {}) {
   const since = period === "all" ? null : periodSince(period);
   const match = since ? { createdAt: { $gte: since } } : {};
   const currencyCtx = await getCurrencyContext();
+  const back = options.back || "menu:home";
+  const periodPrefix = options.periodPrefix || "top:period";
 
   const agg = await ProfitTransaction.aggregate([
     { $match: match },
@@ -286,7 +377,7 @@ async function renderTopWorkers(ctx, period = "all") {
   }
 
   await upsertBotMessage(ctx, lines.join("\n"), {
-    reply_markup: topWorkersKeyboard(period).reply_markup,
+    reply_markup: topWorkersKeyboard(period, { back, periodPrefix }).reply_markup,
   });
 }
 
@@ -353,7 +444,6 @@ function registerCallbackHandlers(bot) {
     const lines = [
       `${pe("coins")} <b>Профиты</b>`,
       "",
-      `Ник: <b>${dash.nickname}</b>`,
       `С нами: <b>${dash.days}</b> дн.`,
     ];
 
@@ -677,11 +767,60 @@ function registerCallbackHandlers(bot) {
     await renderAdminPanel(ctx);
   });
 
-  bot.action("admin:currency:toggle", async (ctx) => {
+  bot.action("admin:users", async (ctx) => {
     if (!requireAdmin(ctx)) return;
-    const next = await toggleDisplayCurrency();
+    await ctx.answerCbQuery();
+    await renderAdminUsers(ctx);
+  });
+
+  bot.action("admin:comms", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    await renderAdminComms(ctx);
+  });
+
+  bot.action("admin:economy", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    await renderAdminEconomy(ctx);
+  });
+
+  bot.action("admin:stats", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    await renderAdminStats(ctx);
+  });
+
+  bot.action("admin:stats:top", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    await renderTopWorkers(ctx, "all", {
+      back: "admin:stats",
+      periodPrefix: "admin:top:period",
+    });
+  });
+
+  bot.action(/^admin:top:period:(all|24h|7d|30d)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const period = ctx.match[1];
+    await ctx.answerCbQuery(`Период: ${periodLabel(period)}`);
+    await renderTopWorkers(ctx, period, {
+      back: "admin:stats",
+      periodPrefix: "admin:top:period",
+    });
+  });
+
+  bot.action("admin:currency", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    await renderAdminCurrency(ctx);
+  });
+
+  bot.action(/^admin:currency:set:(USD|RUB)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const next = await setDisplayCurrency(ctx.match[1]);
     await ctx.answerCbQuery(`Валюта: ${next === "RUB" ? "₽ RUB" : "$ USD"}`);
-    await renderAdminPanel(ctx);
+    await renderAdminEconomy(ctx);
   });
 
   bot.action("admin:currency:rate", async (ctx) => {
@@ -692,7 +831,7 @@ function registerCallbackHandlers(bot) {
     await upsertBotMessage(
       ctx,
       `${pe("analytics")} Текущий курс: <b>1 USD = ${current} RUB</b>\nВведите новый курс (число больше 0).`,
-      { reply_markup: adminCancelKeyboard().reply_markup }
+      { reply_markup: adminCancelKeyboard("admin:economy").reply_markup }
     );
   });
 
@@ -715,7 +854,7 @@ function registerCallbackHandlers(bot) {
     await upsertBotMessage(
       ctx,
       `${pe("users")} Введите Telegram ID или username пользователя для поиска.`,
-      { reply_markup: adminCancelKeyboard().reply_markup }
+      { reply_markup: adminCancelKeyboard("admin:users").reply_markup }
     );
   });
 
@@ -727,7 +866,7 @@ function registerCallbackHandlers(bot) {
     await upsertBotMessage(
       ctx,
       `${pe("analytics")} Текущий глобальный процент: <b>${current}%</b>\nВведите новое значение от 1 до 100.`,
-      { reply_markup: adminCancelKeyboard().reply_markup }
+      { reply_markup: adminCancelKeyboard("admin:economy").reply_markup }
     );
   });
 
@@ -804,7 +943,7 @@ function registerCallbackHandlers(bot) {
     await upsertBotMessage(
       ctx,
       `${pe("broadcast")} Введи текст сообщения для пользователя <code>${telegramId}</code>.`,
-      { reply_markup: adminCancelKeyboard().reply_markup }
+      { reply_markup: adminCancelKeyboard("admin:users").reply_markup }
     );
   });
 
@@ -821,7 +960,7 @@ function registerCallbackHandlers(bot) {
     await upsertBotMessage(
       ctx,
       `${pe("coins")} Введите сумму общего профита для <code>${telegramId}</code>.\nПроцент воркера: ${member.profitPercent}%`,
-      { reply_markup: adminCancelKeyboard().reply_markup }
+      { reply_markup: adminCancelKeyboard("admin:users").reply_markup }
     );
   });
 
@@ -838,7 +977,7 @@ function registerCallbackHandlers(bot) {
     await upsertBotMessage(
       ctx,
       `${pe("settings")} Введите новый процент воркера для <code>${telegramId}</code>.\nТекущее значение: ${member.profitPercent}%`,
-      { reply_markup: adminCancelKeyboard().reply_markup }
+      { reply_markup: adminCancelKeyboard("admin:users").reply_markup }
     );
   });
 
