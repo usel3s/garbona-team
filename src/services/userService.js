@@ -61,6 +61,13 @@ async function getUserByTelegramId(telegramId) {
   return User.findOne({ telegramId: String(telegramId) });
 }
 
+async function getUserByPanelUsername(panelUsername) {
+  const login = String(panelUsername || "").trim();
+  if (!login) return null;
+  const escaped = login.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return User.findOne({ panelUsername: new RegExp(`^${escaped}$`, "i") });
+}
+
 async function setProfitPercent(telegramId, percent) {
   return User.findOneAndUpdate(
     { telegramId: String(telegramId) },
@@ -114,6 +121,33 @@ async function findUserByQuery(query) {
   return exact || results[0];
 }
 
+async function isTeamReferralPathTaken(domainId, path) {
+  return (await User.countDocuments({
+    teamReferrals: { $elemMatch: { domainId: Number(domainId), path: String(path) } },
+  })) > 0;
+}
+
+async function getTeamReferralForDomain(telegramId, domainId) {
+  const user = await getUserByTelegramId(telegramId);
+  return user?.teamReferrals?.find((row) => Number(row.domainId) === Number(domainId)) || null;
+}
+
+async function upsertTeamReferral(telegramId, { domainId, path, panelLinkId }) {
+  const user = await getUserByTelegramId(telegramId);
+  if (!user) return null;
+  const referrals = (user.teamReferrals || []).filter(
+    (row) => Number(row.domainId) !== Number(domainId)
+  );
+  referrals.push({
+    domainId: Number(domainId),
+    path: String(path),
+    panelLinkId: Number.isFinite(Number(panelLinkId)) ? Number(panelLinkId) : null,
+  });
+  user.teamReferrals = referrals;
+  await user.save();
+  return user;
+}
+
 module.exports = {
   ensureUser,
   isAdminTelegramId,
@@ -121,9 +155,13 @@ module.exports = {
   setBan,
   listTeamMembers,
   getUserByTelegramId,
+  getUserByPanelUsername,
   setProfitPercent,
   setUserBio,
   toggleAnonymous,
   searchTeamMembers,
   findUserByQuery,
+  isTeamReferralPathTaken,
+  getTeamReferralForDomain,
+  upsertTeamReferral,
 };

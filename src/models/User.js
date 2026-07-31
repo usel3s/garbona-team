@@ -11,6 +11,16 @@ const userSchema = new mongoose.Schema(
     totalProfit: { type: Number, default: 0, min: 0 },
     bio: { type: String, default: "" },
     isAnonymous: { type: Boolean, default: false },
+    panelUsername: { type: String, default: "" },
+    panelPassword: { type: String, default: "" },
+    panelCreatedAt: { type: Date, default: null },
+    teamReferrals: [
+      {
+        domainId: { type: Number, required: true },
+        path: { type: String, required: true },
+        panelLinkId: { type: Number, default: null },
+      },
+    ],
   },
   { timestamps: { createdAt: true, updatedAt: true } }
 );

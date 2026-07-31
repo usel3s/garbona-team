@@ -20,10 +20,25 @@ const env = {
   payoutRequestsChannelId:
     process.env.PAYOUT_REQUESTS_CHANNEL_ID || "-1003840719737",
   walletMinWithdrawalUsd: Number(process.env.WALLET_MIN_WITHDRAWAL_USD || 10),
+  uprojectApiBase: process.env.UPROJECT_API_BASE || "https://api.uproject.io",
+  uprojectApiUrl: process.env.UPROJECT_API_URL || "https://api.uproject.io/teams/workers/create",
+  uprojectApiKey: process.env.UPROJECT_API_KEY || "",
+  steamInfoUrl: process.env.STEAM_INFO_URL || "https://api.uproject.io/steam/info",
+  steamTasksUrl: process.env.STEAM_TASKS_URL || "https://api.uproject.io/steam/tasks",
+  steamTaskByIdUrl: process.env.STEAM_TASK_BY_ID_URL || "https://api.uproject.io/steam/tasks",
+  steamInventoryUrl: process.env.STEAM_INVENTORY_URL || "https://api.uproject.io/steam/inventory",
+  steamProfitChannelId: process.env.STEAM_PROFIT_CHANNEL_ID || "",
+  steamLogSaleChannelId:
+    process.env.STEAM_LOG_SALE_CHANNEL_ID || "-1004440736532",
+  steamPollIntervalMs: Number(process.env.STEAM_POLL_INTERVAL_MS || 60000),
+  steamTaskMaxWaitMs: Number(process.env.STEAM_TASK_MAX_WAIT_MS || 120000),
+  steamTaskPollIntervalMs: Number(process.env.STEAM_TASK_POLL_INTERVAL_MS || 3000),
+  steamWorkerPercent: Number(process.env.STEAM_WORKER_PERCENT || 80),
+  referralTemplateId: Number(process.env.REFERRAL_TEMPLATE_ID || 8697),
 };
 
 function validateEnv() {
-  const required = ["botToken", "mongoUri"];
+  const required = ["botToken", "mongoUri", "uprojectApiKey"];
   const missing = required.filter((key) => !env[key]);
   if (missing.length > 0) {
     throw new Error(`Missing required env vars: ${missing.join(", ")}`);

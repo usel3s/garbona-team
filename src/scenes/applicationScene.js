@@ -14,6 +14,7 @@ const { ensureUser } = require("../services/userService");
 const { pe } = require("../utils/emoji");
 const { homeOnlyKeyboard } = require("../keyboards/common");
 const { logger } = require("../utils/logger");
+const { isBotCommandText } = require("../utils/session");
 
 const scene = new Scenes.BaseScene("applicationScene");
 
@@ -55,7 +56,17 @@ scene.enter(async (ctx) => {
   });
 });
 
-scene.on("text", async (ctx) => {
+scene.on("text", async (ctx, next) => {
+  if (isBotCommandText(ctx.message?.text)) {
+    ctx.scene.session.formState = null;
+    try {
+      await ctx.scene.leave();
+    } catch (_) {
+      /* ignore */
+    }
+    return next();
+  }
+
   const { form, state } = await ensureSceneState(ctx);
   const currentQuestion = form.questions[state.questionIndex];
   if (!currentQuestion) return;

@@ -26,6 +26,7 @@ const {
 const { sendUiMessage, renderPostSettings } = require("../utils/postbotUi");
 const { logger } = require("../utils/logger");
 const { getTelegramErrorText } = require("../utils/telegramSafe");
+const { isBotCommandText } = require("../utils/session");
 
 const PAGE_SIZE = 8;
 
@@ -338,7 +339,19 @@ async function tryDeleteUserMessage(ctx) {
   }
 }
 
-scene.on("message", async (ctx) => {
+scene.on("message", async (ctx, next) => {
+  if (ctx.message?.text && isBotCommandText(ctx.message.text)) {
+    ctx.scene.session.draft = null;
+    ctx.scene.session.step = null;
+    ctx.scene.session.sendPostId = null;
+    try {
+      await ctx.scene.leave();
+    } catch (_) {
+      /* ignore */
+    }
+    return next();
+  }
+
   const step = getStep(ctx);
 
   if (step === "await_send_target") {

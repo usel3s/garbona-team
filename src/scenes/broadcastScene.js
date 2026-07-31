@@ -23,6 +23,7 @@ const {
 const { adminPanelKeyboard } = require("../keyboards/admin");
 const { upsertBotMessage } = require("../utils/message");
 const { logger } = require("../utils/logger");
+const { isBotCommandText } = require("../utils/session");
 
 function emptyDraft() {
   return {
@@ -345,7 +346,20 @@ scene.action("broadcast:send", async (ctx) => {
   }
 });
 
-scene.on("message", async (ctx) => {
+scene.on("message", async (ctx, next) => {
+  if (ctx.message?.text && isBotCommandText(ctx.message.text)) {
+    ctx.scene.session.draft = null;
+    ctx.scene.session.step = null;
+    ctx.scene.session.uiMessageId = null;
+    ctx.scene.session.previewMessageId = null;
+    try {
+      await ctx.scene.leave();
+    } catch (_) {
+      /* ignore */
+    }
+    return next();
+  }
+
   if (!isAdminTelegramId(ctx.from.id)) return;
 
   const step = getStep(ctx);

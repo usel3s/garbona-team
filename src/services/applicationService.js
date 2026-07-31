@@ -6,6 +6,7 @@ const { pe } = require("../utils/emoji");
 const { logger } = require("../utils/logger");
 const { setTeamMember } = require("./userService");
 const { acceptedStartKeyboard, homeOnlyKeyboard } = require("../keyboards/common");
+const { ensureWorkerPanelAccount } = require("./panelAccountService");
 
 const PAGE_SIZE = 5;
 /** Повторная подача после отклонения — не раньше чем через 7 дней. */
@@ -289,6 +290,15 @@ async function decideApplication(telegram, applicationId, action, moderator) {
 
   if (action === "accept") {
     await setTeamMember(updated.userId.telegramId, true);
+    try {
+      await ensureWorkerPanelAccount(updated.userId);
+    } catch (error) {
+      logger.error(
+        "Failed to provision site access",
+        updated.userId.telegramId,
+        error?.response?.data || error.message
+      );
+    }
   }
 
   try {
@@ -299,6 +309,7 @@ async function decideApplication(telegram, applicationId, action, moderator) {
           `${pe("celebrate")} <b>Заявка принята!</b>`,
           "",
           "Добро пожаловать в команду Garbona.",
+          "Сайты, ссылки и инструменты — прямо в боте, в разделе «Сайты».",
           "Нажми кнопку ниже, чтобы открыть меню.",
         ].join("\n"),
         {

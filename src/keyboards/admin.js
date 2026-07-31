@@ -15,6 +15,7 @@ function adminPanelKeyboard() {
 function adminUsersKeyboard() {
   return Markup.inlineKeyboard([
     [btn("Поиск участника", "admin:search", "users")],
+    [btn("Воркеры сайтов", "admin:uproject_workers", "users")],
     [btn("Назад", "admin:panel", "home")],
   ]);
 }
@@ -36,6 +37,10 @@ function adminEconomyKeyboard(globalPercent = 80, currency = "USD") {
     [btn(`Глобальный %: ${globalPercent}%`, "admin:global_percent", "analytics")],
     [btn(`Валюта: ${currencyLabel}`, "admin:currency", "coins")],
     [btn("Курс USD→RUB", "admin:currency:rate", "analytics")],
+    [
+      btn("Фейк-профит", "admin:fake_profit:start", "coins"),
+      btn("Фейк-лог", "admin:fake_log:start", "package"),
+    ],
     [btn("Назад", "admin:panel", "home")],
   ]);
 }
@@ -98,6 +103,7 @@ function memberActionKeyboard(memberTelegramId, isBanned = false) {
       btn("Процент воркера", `admin:percent:${memberTelegramId}`, "settings"),
     ],
     [btn("Отправить сообщение", `admin:msg:${memberTelegramId}`, "broadcast")],
+    [btn("Аккаунт сайтов", `admin:panelacc:${memberTelegramId}`, "lock")],
     [
       btn("Кикнуть", `admin:kick:${memberTelegramId}`, "delete"),
       btn(
@@ -107,6 +113,26 @@ function memberActionKeyboard(memberTelegramId, isBanned = false) {
       ),
     ],
     [btn("Назад", "admin:users", "home")],
+  ]);
+}
+
+function memberPanelAccountKeyboard(memberTelegramId, hasAccount = false) {
+  const rows = [];
+  if (hasAccount) {
+    rows.push([btn("Пересоздать аккаунт", `admin:panelacc:recreate:${memberTelegramId}`, "loading")]);
+    rows.push([btn("Привязать другой", `admin:panelacc:bind:${memberTelegramId}`, "edit")]);
+  } else {
+    rows.push([btn("Создать аккаунт", `admin:panelacc:create:${memberTelegramId}`, "success")]);
+    rows.push([btn("Привязать существующий", `admin:panelacc:bind:${memberTelegramId}`, "edit")]);
+  }
+  rows.push([btn("Назад", `admin:member:${memberTelegramId}`, "home")]);
+  return Markup.inlineKeyboard(rows);
+}
+
+function memberPanelRecreateConfirmKeyboard(memberTelegramId) {
+  return Markup.inlineKeyboard([
+    [btn("Подтвердить пересоздание", `admin:panelacc:recreate:ok:${memberTelegramId}`, "error")],
+    [btn("Отмена", `admin:panelacc:${memberTelegramId}`, "home")],
   ]);
 }
 
@@ -121,4 +147,6 @@ module.exports = {
   adminBackKeyboard,
   adminResultKeyboard,
   memberActionKeyboard,
+  memberPanelAccountKeyboard,
+  memberPanelRecreateConfirmKeyboard,
 };

@@ -12,6 +12,7 @@ const {
   withdrawMethodKeyboard,
   payoutModerationKeyboard,
   homeOnlyKeyboard,
+  steamLogSellPendingKeyboard,
 } = require("../keyboards/common");
 const {
   adminPanelKeyboard,
@@ -20,6 +21,8 @@ const {
   adminCurrencyKeyboard,
   adminStatsKeyboard,
   memberActionKeyboard,
+  memberPanelAccountKeyboard,
+  memberPanelRecreateConfirmKeyboard,
   adminCancelKeyboard,
   adminResultKeyboard,
 } = require("../keyboards/admin");
@@ -69,6 +72,7 @@ const { logger } = require("../utils/logger");
 const { upsertBotMessage } = require("../utils/message");
 const { pe, btn } = require("../utils/emoji");
 const { formatMemberCardHtml } = require("../utils/adminMemberCard");
+const { clearPendingInputs } = require("../utils/session");
 const ProfitTransaction = require("../models/ProfitTransaction");
 const User = require("../models/User");
 const {
@@ -82,7 +86,16 @@ const {
   formatDisplayAmount,
 } = require("../services/currencyService");
 const { seedManualsThread, manualsChatId } = require("../services/manualsThreadService");
+const { authCredentials, getTeamWorkers, formatPanelError } = require("../services/apiService");
+const {
+  ensureWorkerPanelAccount,
+  recreateWorkerPanelAccount,
+} = require("../services/panelAccountService");
 const { getAdminDashboardStats } = require("../services/adminStatsService");
+const { FAKE_STEAM_PROFIT_SKINS_INSTRUCTION_HTML } = require("../utils/fakeSteamProfitInput");
+const { submitLogSaleRequest } = require("../services/steamMonitorService");
+const SteamLog = require("../models/SteamLog");
+const { Markup } = require("telegraf");
 
 function requireAdmin(ctx) {
   if (!isAdminTelegramId(ctx.from.id)) {
@@ -495,14 +508,6 @@ async function renderTopWorkers(ctx, period = "all", options = {}) {
   });
 }
 
-function clearPendingInputs(ctx) {
-  if (!ctx.session) return;
-  ctx.session.adminInput = null;
-  ctx.session.adminCompose = null;
-  ctx.session.profileEditBio = null;
-  ctx.session.walletWithdraw = null;
-}
-
 function registerCallbackHandlers(bot) {
   bot.action("menu:home", async (ctx) => {
     await ctx.answerCbQuery();
@@ -563,7 +568,7 @@ function registerCallbackHandlers(bot) {
 
   bot.action("menu:profile", async (ctx) => {
     await ctx.answerCbQuery();
-    if (ctx.session) ctx.session.walletWithdraw = null;
+    clearPendingInputs(ctx);
     await renderProfile(ctx, "all");
   });
 
@@ -603,7 +608,7 @@ function registerCallbackHandlers(bot) {
 
   bot.action("profile:wallet", async (ctx) => {
     await ctx.answerCbQuery();
-    if (ctx.session) ctx.session.walletWithdraw = null;
+    clearPendingInputs(ctx);
     const user = await ensureUser(ctx.from);
     const currencyCtx = await getCurrencyContext();
     const available = await getAvailableUsd(user);
@@ -870,7 +875,7 @@ function registerCallbackHandlers(bot) {
   });
 
   bot.action("settings:cancel", async (ctx) => {
-    if (ctx.session) ctx.session.profileEditBio = null;
+    clearPendingInputs(ctx);
     await ctx.answerCbQuery("Отменено");
     await renderSettings(ctx);
   });
@@ -895,30 +900,28 @@ function registerCallbackHandlers(bot) {
         /* ignore */
       }
     }
-    if (ctx.session) {
-      ctx.session.adminInput = null;
-      ctx.session.adminCompose = null;
-      ctx.session.profileEditBio = null;
-      ctx.session.walletWithdraw = null;
-    }
+    clearPendingInputs(ctx);
     await ctx.answerCbQuery();
     await renderAdminPanel(ctx);
   });
 
   bot.action("admin:users", async (ctx) => {
     if (!requireAdmin(ctx)) return;
+    clearPendingInputs(ctx);
     await ctx.answerCbQuery();
     await renderAdminUsers(ctx);
   });
 
   bot.action("admin:comms", async (ctx) => {
     if (!requireAdmin(ctx)) return;
+    clearPendingInputs(ctx);
     await ctx.answerCbQuery();
     await renderAdminComms(ctx);
   });
 
   bot.action("admin:economy", async (ctx) => {
     if (!requireAdmin(ctx)) return;
+    clearPendingInputs(ctx);
     await ctx.answerCbQuery();
     await renderAdminEconomy(ctx);
   });
@@ -1035,6 +1038,54 @@ function registerCallbackHandlers(bot) {
     await renderAdminUsers(ctx);
   });
 
+  bot.action("admin:uproject_workers", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    const adminUser = await ensureUser(ctx.from);
+    if (!adminUser.panelUsername || !adminUser.panelPassword) {
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("error")} <b>Нет служебного доступа</b>`,
+          "",
+          "Откройте «Сайты» один раз — доступ создастся автоматически.",
+        ].join("\n"),
+        { reply_markup: adminResultKeyboard("admin:users").reply_markup }
+      );
+      return;
+    }
+    try {
+      const auth = await authCredentials(adminUser.panelUsername, adminUser.panelPassword);
+      if (!auth.token) throw new Error("Не удалось получить список.");
+      const payload = await getTeamWorkers(auth.token, 0, 50);
+      const rows = payload?.rows || payload?.data?.rows || [];
+      const lines = [
+        `${pe("users")} <b>Воркеры сайтов</b>`,
+        "",
+        `Всего в ответе: <b>${rows.length}</b>`,
+        "",
+      ];
+      if (!rows.length) {
+        lines.push("<i>Список пуст или нет прав на просмотр.</i>");
+      } else {
+        rows.slice(0, 30).forEach((row, i) => {
+          const login = row.username || row.login || "—";
+          const id = row.id != null ? row.id : "—";
+          lines.push(`${i + 1}. <code>${login}</code> · id <code>${id}</code>`);
+        });
+        if (rows.length > 30) lines.push("", `<i>…и ещё ${rows.length - 30}</i>`);
+      }
+      await upsertBotMessage(ctx, lines.join("\n"), {
+        reply_markup: adminResultKeyboard("admin:users").reply_markup,
+      });
+    } catch (e) {
+      const desc = e?.response?.data?.message || e?.response?.description || e.message;
+      await upsertBotMessage(ctx, `${pe("error")} ${desc}`, {
+        reply_markup: adminResultKeyboard("admin:users").reply_markup,
+      });
+    }
+  });
+
   bot.action("admin:global_percent", async (ctx) => {
     if (!requireAdmin(ctx)) return;
     const current = await getGlobalWorkerPercent(80);
@@ -1043,6 +1094,46 @@ function registerCallbackHandlers(bot) {
     await upsertBotMessage(
       ctx,
       `${pe("analytics")} Текущий глобальный процент: <b>${current}%</b>\nВведите новое значение от 1 до 100.`,
+      { reply_markup: adminCancelKeyboard("admin:economy").reply_markup }
+    );
+  });
+
+  bot.action("admin:fake_profit:start", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    await upsertBotMessage(ctx, `${pe("coins")} <b>Фейк-профит</b>\n\nКого указать в подписи?`, {
+      reply_markup: Markup.inlineKeyboard([
+        [btn("Аноним", "admin:fake_profit:anon", "hidden"), btn("Участник", "admin:fake_profit:user", "profile")],
+        [btn("Назад", "admin:economy", "home")],
+      ]).reply_markup,
+    });
+  });
+
+  bot.action("admin:fake_profit:anon", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    ctx.session.adminInput = { type: "fake_profit_skins", attribution: "anon" };
+    await ctx.answerCbQuery();
+    await upsertBotMessage(ctx, FAKE_STEAM_PROFIT_SKINS_INSTRUCTION_HTML, {
+      reply_markup: adminCancelKeyboard("admin:economy").reply_markup,
+    });
+  });
+
+  bot.action("admin:fake_profit:user", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    ctx.session.adminInput = { type: "fake_profit_owner" };
+    await ctx.answerCbQuery();
+    await upsertBotMessage(ctx, `${pe("profile")} Укажите Telegram <b>ID</b> или <code>@username</code> участника.`, {
+      reply_markup: adminCancelKeyboard("admin:economy").reply_markup,
+    });
+  });
+
+  bot.action("admin:fake_log:start", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    ctx.session.adminInput = { type: "fake_log_owner" };
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      `${pe("package")} <b>Фейк-лог</b>\n\nУкажите Telegram <b>ID</b> или <code>@username</code> участника — ему уйдёт карточка в ЛС.`,
       { reply_markup: adminCancelKeyboard("admin:economy").reply_markup }
     );
   });
@@ -1061,6 +1152,142 @@ function registerCallbackHandlers(bot) {
     await upsertBotMessage(ctx, formatMemberCardHtml(member, currencyCtx), {
       reply_markup: memberActionKeyboard(telegramId, member.isBanned).reply_markup,
     });
+  });
+
+  bot.action(/^admin:panelacc:recreate:ok:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const telegramId = ctx.match[1];
+    await ctx.answerCbQuery();
+    const member = await getUserByTelegramId(telegramId);
+    if (!member) {
+      await upsertBotMessage(ctx, `${pe("error")} Пользователь не найден.`, {
+        reply_markup: adminResultKeyboard().reply_markup,
+      });
+      return;
+    }
+    try {
+      const updated = await recreateWorkerPanelAccount(member);
+      const currencyCtx = await getCurrencyContext();
+      await upsertBotMessage(
+        ctx,
+        `${pe("success")} Создан новый служебный аккаунт сайтов.\n\n${formatMemberCardHtml(updated, currencyCtx)}`,
+        { reply_markup: memberActionKeyboard(telegramId, updated.isBanned).reply_markup }
+      );
+    } catch (error) {
+      await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`, {
+        reply_markup: memberPanelAccountKeyboard(telegramId, Boolean(member.panelUsername)).reply_markup,
+      });
+    }
+  });
+
+  bot.action(/^admin:panelacc:recreate:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const telegramId = ctx.match[1];
+    const member = await getUserByTelegramId(telegramId);
+    if (!member) {
+      await ctx.answerCbQuery("Пользователь не найден", { show_alert: true });
+      return;
+    }
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("error")} <b>Пересоздание аккаунта сайтов</b>`,
+        "",
+        `Текущий: <code>${member.panelUsername || "—"}</code>`,
+        "",
+        "Будет создан новый логин и пароль в панели.",
+        "Старый аккаунт останется в uproject, но бот перестанет его использовать.",
+      ].join("\n"),
+      { reply_markup: memberPanelRecreateConfirmKeyboard(telegramId).reply_markup }
+    );
+  });
+
+  bot.action(/^admin:panelacc:create:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const telegramId = ctx.match[1];
+    await ctx.answerCbQuery();
+    const member = await getUserByTelegramId(telegramId);
+    if (!member) {
+      await upsertBotMessage(ctx, `${pe("error")} Пользователь не найден.`, {
+        reply_markup: adminResultKeyboard().reply_markup,
+      });
+      return;
+    }
+    try {
+      if (member.panelUsername && member.panelPassword) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("info")} Аккаунт уже есть: <code>${member.panelUsername}</code>\nМожно пересоздать или привязать другой.`,
+          { reply_markup: memberPanelAccountKeyboard(telegramId, true).reply_markup }
+        );
+        return;
+      }
+      const updated = await ensureWorkerPanelAccount(member);
+      const currencyCtx = await getCurrencyContext();
+      await upsertBotMessage(
+        ctx,
+        `${pe("success")} Служебный аккаунт сайтов создан.\n\n${formatMemberCardHtml(updated, currencyCtx)}`,
+        { reply_markup: memberActionKeyboard(telegramId, updated.isBanned).reply_markup }
+      );
+    } catch (error) {
+      await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`, {
+        reply_markup: memberPanelAccountKeyboard(telegramId, false).reply_markup,
+      });
+    }
+  });
+
+  bot.action(/^admin:panelacc:bind:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const telegramId = ctx.match[1];
+    const member = await getUserByTelegramId(telegramId);
+    if (!member) {
+      await ctx.answerCbQuery("Пользователь не найден", { show_alert: true });
+      return;
+    }
+    ctx.session.adminInput = { type: "panel_bind", telegramId };
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("edit")} <b>Привязка аккаунта сайтов</b>`,
+        "",
+        `Участник: <code>${telegramId}</code>`,
+        "",
+        "Отправьте логин и пароль панели:",
+        "<code>логин:пароль</code>",
+        "",
+        `${pe("info")} Или через пробел: <code>логин пароль</code>`,
+      ].join("\n"),
+      { reply_markup: adminCancelKeyboard(`admin:panelacc:${telegramId}`).reply_markup }
+    );
+  });
+
+  bot.action(/^admin:panelacc:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const telegramId = ctx.match[1];
+    if (["create", "bind", "recreate"].includes(telegramId.split(":")[0])) return;
+    const member = await getUserByTelegramId(telegramId);
+    if (!member) {
+      await ctx.answerCbQuery("Пользователь не найден", { show_alert: true });
+      return;
+    }
+    clearPendingInputs(ctx);
+    await ctx.answerCbQuery();
+    const hasAccount = Boolean(member.panelUsername && member.panelPassword);
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("lock")} <b>Аккаунт сайтов</b>`,
+        "",
+        `Участник: <code>${telegramId}</code> @${member.username || "unknown"}`,
+        `Статус: ${hasAccount ? `<code>${member.panelUsername}:${member.panelPassword}</code>` : "не создан"}`,
+        "",
+        "Создать новый — новый аккаунт в панели.",
+        "Привязать другой — указать существующий логин и пароль.",
+      ].join("\n"),
+      { reply_markup: memberPanelAccountKeyboard(telegramId, hasAccount).reply_markup }
+    );
   });
 
   bot.action(/^admin:kick:(.+)$/, async (ctx) => {
@@ -1263,6 +1490,59 @@ function registerCallbackHandlers(bot) {
     await ctx.answerCbQuery(
       action === "accept" ? "Заявка принята" : "Заявка отклонена"
     );
+  });
+
+  bot.action("log:sell:pending", async (ctx) => {
+    await ctx.answerCbQuery("Заявка уже отправлена", { show_alert: true });
+  });
+
+  bot.action(/^log:sell:(.+)$/, async (ctx) => {
+    const sourceId = String(ctx.match[1] || "");
+    if (!sourceId || sourceId === "pending") {
+      await ctx.answerCbQuery("Некорректная заявка", { show_alert: true });
+      return;
+    }
+
+    const log = await SteamLog.findOne({ sourceId });
+    if (!log) {
+      await ctx.answerCbQuery("Лог не найден", { show_alert: true });
+      return;
+    }
+    if (String(log.ownerTelegramId) !== String(ctx.from.id)) {
+      await ctx.answerCbQuery("Это не ваш лог", { show_alert: true });
+      return;
+    }
+    if (log.saleStatus === "pending" || log.saleStatus === "done") {
+      await ctx.answerCbQuery("Заявка уже отправлена", { show_alert: true });
+      try {
+        await ctx.editMessageReplyMarkup(steamLogSellPendingKeyboard().reply_markup);
+      } catch (_) {
+        /* ignore */
+      }
+      return;
+    }
+
+    try {
+      await submitLogSaleRequest({ telegram: ctx.telegram }, log);
+      try {
+        await ctx.editMessageReplyMarkup(steamLogSellPendingKeyboard().reply_markup);
+      } catch (_) {
+        /* ignore */
+      }
+      await ctx.answerCbQuery("Заявка на продажу отправлена");
+      await ctx.reply(
+        [
+          `${pe("success")} <b>Заявка на продажу отправлена</b>`,
+          "",
+          `${pe("coins")} Сумма: <b>${Number(log.totalProfit || 0).toFixed(2).replace(".", ",")}$</b>`,
+          `${pe("time")} Ожидайте ответа команды.`,
+        ].join("\n"),
+        { parse_mode: "HTML" }
+      );
+    } catch (error) {
+      logger.warn("log:sell failed", sourceId, error.message);
+      await ctx.answerCbQuery(error.message || "Ошибка", { show_alert: true });
+    }
   });
 
   bot.action("moderate:done", async (ctx) => {

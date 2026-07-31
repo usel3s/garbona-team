@@ -8,6 +8,9 @@ const { registerInlineHandlers } = require("./handlers/inlineHandler");
 const { applicationScene } = require("./scenes/applicationScene");
 const { postbotScene } = require("./scenes/postbotScene");
 const { broadcastScene } = require("./scenes/broadcastScene");
+const { registerSitesHandlers } = require("./handlers/sitesHandler");
+const { startSteamMonitor, recheckSteamId } = require("./services/steamMonitorService");
+const { isAdminTelegramId } = require("./services/userService");
 const { logger } = require("./utils/logger");
 const { pe } = require("./utils/emoji");
 const {
@@ -15,6 +18,7 @@ const {
   getTelegramErrorText,
   patchSafeAnswerCbQuery,
 } = require("./utils/telegramSafe");
+const { clearPendingInputs, isBotCommandText } = require("./utils/session");
 
 async function bootstrap() {
   validateEnv();
@@ -27,6 +31,14 @@ async function bootstrap() {
 
   bot.use(async (ctx, next) => {
     patchSafeAnswerCbQuery(ctx);
+    return next();
+  });
+
+  // Любая команда (/start и др.) сбрасывает ожидание ввода вне сцен.
+  bot.use(async (ctx, next) => {
+    if (ctx.message?.text && isBotCommandText(ctx.message.text)) {
+      clearPendingInputs(ctx);
+    }
     return next();
   });
 
@@ -73,8 +85,27 @@ async function bootstrap() {
 
   registerStartCommand(bot);
   registerCallbackHandlers(bot);
+  registerSitesHandlers(bot);
   registerTextHandlers(bot);
   registerInlineHandlers(bot);
+  bot.command("recheck_steam", async (ctx) => {
+    if (!isAdminTelegramId(ctx.from.id)) {
+      await ctx.reply(`${pe("error")} Недостаточно прав.`, { parse_mode: "HTML" });
+      return;
+    }
+    const steamId = String(ctx.message?.text || "").split(/\s+/)[1];
+    if (!steamId) {
+      await ctx.reply(`${pe("info")} Использование: <code>/recheck_steam &lt;id&gt;</code>`, { parse_mode: "HTML" });
+      return;
+    }
+    try {
+      await ctx.reply(`${pe("loading")} Запускаю проверку Steam ID <code>${steamId}</code>.`, { parse_mode: "HTML" });
+      const log = await recheckSteamId(bot, steamId);
+      await ctx.reply(`${pe("success")} Проверка завершена.\nСтатус: <b>${log.status}</b>${log.errorMessage ? `\n${pe("error")} ${log.errorMessage}` : ""}`, { parse_mode: "HTML" });
+    } catch (error) {
+      await ctx.reply(`${pe("error")} ${error.message}`, { parse_mode: "HTML" });
+    }
+  });
 
   process.on("unhandledRejection", (reason) => {
     if (isIgnorableTelegramError(reason)) {
@@ -101,6 +132,7 @@ async function bootstrap() {
     ],
   });
   logger.info("Bot started");
+  startSteamMonitor(bot);
 
   process.once("SIGINT", () => bot.stop("SIGINT"));
   process.once("SIGTERM", () => bot.stop("SIGTERM"));

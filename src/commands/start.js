@@ -3,6 +3,7 @@ const { upsertBotMessage } = require("../utils/message");
 const { ensureUser } = require("../services/userService");
 const { getApplicationSubmitGate } = require("../services/applicationService");
 const { pe } = require("../utils/emoji");
+const { clearPendingInputs } = require("../utils/session");
 
 async function renderHome(ctx) {
   const user = await ensureUser(ctx.from);
@@ -57,18 +58,8 @@ function registerStartCommand(bot) {
     if (ctx.scene?.session?.formState) {
       ctx.scene.session.formState = null;
     }
-    if (ctx.session?.adminCompose) {
-      ctx.session.adminCompose = null;
-    }
-    if (ctx.session?.adminInput) {
-      ctx.session.adminInput = null;
-    }
-    if (ctx.session?.profileEditBio) {
-      ctx.session.profileEditBio = null;
-    }
-    if (ctx.session?.walletWithdraw) {
-      ctx.session.walletWithdraw = null;
-    }
+
+    clearPendingInputs(ctx);
 
     await renderHome(ctx);
   });

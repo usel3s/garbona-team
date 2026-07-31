@@ -19,6 +19,7 @@ function acceptedStartKeyboard() {
 function participantPanelKeyboard(isAdmin) {
   const rows = [
     [btn("Профиль", "menu:profile", "profile")],
+    [btn("Сайты", "menu:sites", "link")],
     [
       btn("О проекте", "menu:about", "info"),
       btn("Настройки", "menu:settings", "settings"),
@@ -120,6 +121,18 @@ function payoutModerationKeyboard(requestId) {
   ]);
 }
 
+function steamLogSellKeyboard(sourceId) {
+  return Markup.inlineKeyboard([
+    [btn("Продать", `log:sell:${sourceId}`, "transfer")],
+  ]);
+}
+
+function steamLogSellPendingKeyboard() {
+  return Markup.inlineKeyboard([
+    [btn("Заявка отправлена", "log:sell:pending", "time")],
+  ]);
+}
+
 /**
  * @param {string} infoChannelUrl
  * @param {Record<string, string>} inviteUrls
@@ -199,4 +212,6 @@ module.exports = {
   settingsResultKeyboard,
   homeOnlyKeyboard,
   topWorkersKeyboard,
+  steamLogSellKeyboard,
+  steamLogSellPendingKeyboard,
 };

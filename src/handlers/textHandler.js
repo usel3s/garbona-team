@@ -4,6 +4,7 @@ const {
   setUserBio,
   ensureUser,
   findUserByQuery,
+  getUserByTelegramId,
 } = require("../services/userService");
 const { addProfitToUserByTelegramId } = require("../services/profitService");
 const { setGlobalWorkerPercent, setUsdRubRate } = require("../services/settingsService");
@@ -21,6 +22,7 @@ const {
 } = require("../services/withdrawalService");
 const { upsertBotMessage } = require("../utils/message");
 const { pe } = require("../utils/emoji");
+const { clearPendingInputs, isBotCommandText } = require("../utils/session");
 const { formatMemberCardHtml } = require("../utils/adminMemberCard");
 const { getCurrencyContext } = require("../services/currencyService");
 const {
@@ -34,6 +36,18 @@ const {
   adminResultKeyboard,
   memberActionKeyboard,
 } = require("../keyboards/admin");
+const {
+  bindWorkerPanelAccount,
+  parsePanelCredentialsInput,
+} = require("../services/panelAccountService");
+const { formatPanelError } = require("../services/apiService");
+const { sendFakeSteamProfit, sendFakeSteamLog } = require("../services/steamMonitorService");
+const { resolveFakeProfitSevenSkinQueries } = require("../services/steamMarketLookup");
+const { FAKE_STEAM_PROFIT_SKINS_INSTRUCTION_HTML } = require("../utils/fakeSteamProfitInput");
+const {
+  FAKE_STEAM_LOG_INSTRUCTION_HTML,
+  parseFakeSteamLogInput,
+} = require("../utils/fakeSteamLogInput");
 
 function formatMoney(value) {
   return `$${Number(value || 0).toFixed(2)}`;
@@ -45,8 +59,14 @@ function registerTextHandlers(bot) {
       return next();
     }
 
+    const incoming = String(ctx.message?.text || "").trim();
+    if (isBotCommandText(incoming)) {
+      clearPendingInputs(ctx);
+      return next();
+    }
+
     if (ctx.session?.profileEditBio) {
-      const text = (ctx.message.text || "").trim();
+      const text = incoming;
       try {
         await ctx.deleteMessage(ctx.message.message_id);
       } catch (_) {
@@ -181,9 +201,15 @@ function registerTextHandlers(bot) {
         adminInput?.type === "search_user" ||
         adminInput?.type === "profit" ||
         adminInput?.type === "percent" ||
+        adminInput?.type === "panel_bind" ||
         compose
           ? "admin:users"
-          : adminInput?.type === "global_percent" || adminInput?.type === "currency_rate"
+          : adminInput?.type === "global_percent" ||
+              adminInput?.type === "currency_rate" ||
+              adminInput?.type === "fake_profit_owner" ||
+              adminInput?.type === "fake_profit_skins" ||
+              adminInput?.type === "fake_log_owner" ||
+              adminInput?.type === "fake_log_fields"
             ? "admin:economy"
             : adminInput?.type === "app_question_label" ||
                 adminInput?.type === "app_question_prompt"
@@ -192,6 +218,41 @@ function registerTextHandlers(bot) {
       await upsertBotMessage(ctx, `${pe("error")} Пустое сообщение. Повторите ввод.`, {
         reply_markup: adminCancelKeyboard(cancelBack).reply_markup,
       });
+      return;
+    }
+
+    if (adminInput?.type === "panel_bind") {
+      const parsed = parsePanelCredentialsInput(text);
+      if (!parsed) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Формат: <code>логин:пароль</code>`,
+          { reply_markup: adminCancelKeyboard(`admin:panelacc:${adminInput.telegramId}`).reply_markup }
+        );
+        return;
+      }
+      const member = await getUserByTelegramId(adminInput.telegramId);
+      if (!member) {
+        ctx.session.adminInput = null;
+        await upsertBotMessage(ctx, `${pe("error")} Пользователь не найден.`, {
+          reply_markup: adminBackKeyboard("admin:users").reply_markup,
+        });
+        return;
+      }
+      try {
+        await bindWorkerPanelAccount(member, parsed.username, parsed.password);
+        ctx.session.adminInput = null;
+        const currencyCtx = await getCurrencyContext();
+        await upsertBotMessage(
+          ctx,
+          `${pe("success")} Аккаунт сайтов привязан.\n\n${formatMemberCardHtml(member, currencyCtx)}`,
+          { reply_markup: memberActionKeyboard(member.telegramId, member.isBanned).reply_markup }
+        );
+      } catch (error) {
+        await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`, {
+          reply_markup: adminCancelKeyboard(`admin:panelacc:${adminInput.telegramId}`).reply_markup,
+        });
+      }
       return;
     }
 
@@ -265,6 +326,101 @@ function registerTextHandlers(bot) {
         { reply_markup: adminResultKeyboard("admin:users").reply_markup }
       );
       ctx.session.adminInput = null;
+      return;
+    }
+
+    if (adminInput?.type === "fake_profit_owner") {
+      const member = await findUserByQuery(text);
+      if (!member) {
+        await upsertBotMessage(ctx, `${pe("error")} Участник не найден. Укажите ID или @username.`, {
+          reply_markup: adminCancelKeyboard("admin:economy").reply_markup,
+        });
+        return;
+      }
+      ctx.session.adminInput = {
+        type: "fake_profit_skins",
+        attribution: "user",
+        ownerTelegramId: member.telegramId,
+      };
+      await upsertBotMessage(ctx, `${pe("success")} Участник: <code>${member.telegramId}</code>\n\n${FAKE_STEAM_PROFIT_SKINS_INSTRUCTION_HTML}`, {
+        reply_markup: adminCancelKeyboard("admin:economy").reply_markup,
+      });
+      return;
+    }
+
+    if (adminInput?.type === "fake_profit_skins") {
+      await upsertBotMessage(ctx, `${pe("loading")} Запрашиваю Steam Market. Это может занять до 30 секунд.`);
+      try {
+        const parsed = await resolveFakeProfitSevenSkinQueries(text);
+        if (parsed.error) {
+          await upsertBotMessage(ctx, `${pe("error")} ${parsed.error}`, {
+            reply_markup: adminCancelKeyboard("admin:economy").reply_markup,
+          });
+          return;
+        }
+        await sendFakeSteamProfit(bot, {
+          items: parsed.items,
+          total: parsed.total,
+          anonymous: adminInput.attribution === "anon",
+          ownerTelegramId: adminInput.ownerTelegramId,
+        });
+        ctx.session.adminInput = null;
+        await upsertBotMessage(ctx, `${pe("success")} Фейк-профит отправлен. Сумма: <b>$${parsed.total.toFixed(2)}</b>.`, {
+          reply_markup: adminResultKeyboard("admin:economy").reply_markup,
+        });
+      } catch (error) {
+        await upsertBotMessage(ctx, `${pe("error")} ${error.message}`, {
+          reply_markup: adminCancelKeyboard("admin:economy").reply_markup,
+        });
+      }
+      return;
+    }
+
+    if (adminInput?.type === "fake_log_owner") {
+      const member = await findUserByQuery(text);
+      if (!member) {
+        await upsertBotMessage(ctx, `${pe("error")} Участник не найден. Укажите ID или @username.`, {
+          reply_markup: adminCancelKeyboard("admin:economy").reply_markup,
+        });
+        return;
+      }
+      ctx.session.adminInput = {
+        type: "fake_log_fields",
+        ownerTelegramId: member.telegramId,
+      };
+      await upsertBotMessage(
+        ctx,
+        `${pe("success")} Участник: <code>${member.telegramId}</code>\n\n${FAKE_STEAM_LOG_INSTRUCTION_HTML}`,
+        { reply_markup: adminCancelKeyboard("admin:economy").reply_markup }
+      );
+      return;
+    }
+
+    if (adminInput?.type === "fake_log_fields") {
+      const parsed = parseFakeSteamLogInput(text);
+      if (parsed.error) {
+        await upsertBotMessage(ctx, `${pe("error")} ${parsed.error}`, {
+          reply_markup: adminCancelKeyboard("admin:economy").reply_markup,
+        });
+        return;
+      }
+      try {
+        const ownerTelegramId = adminInput.ownerTelegramId;
+        await sendFakeSteamLog(bot, {
+          account: parsed.account,
+          ownerTelegramId,
+        });
+        ctx.session.adminInput = null;
+        await upsertBotMessage(
+          ctx,
+          `${pe("success")} Фейк-лог отправлен в ЛС <code>${ownerTelegramId}</code>.`,
+          { reply_markup: adminResultKeyboard("admin:economy").reply_markup }
+        );
+      } catch (error) {
+        await upsertBotMessage(ctx, `${pe("error")} ${error.message}`, {
+          reply_markup: adminCancelKeyboard("admin:economy").reply_markup,
+        });
+      }
       return;
     }
 

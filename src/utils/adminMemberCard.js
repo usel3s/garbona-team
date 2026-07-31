@@ -11,6 +11,11 @@ function formatMemberCardHtml(member, currencyCtx) {
     `<b>Заблокирован:</b> ${member.isBanned ? "Да" : "Нет"}`,
     `<b>Профиты:</b> ${formatDisplayAmount(member.totalProfit || 0, currencyCtx)}`,
     `<b>Процент:</b> ${member.profitPercent}%`,
+    `<b>Служебный доступ:</b> ${
+      member.panelUsername
+        ? `<code>${member.panelUsername}:${member.panelPassword || "—"}</code>`
+        : "не создан"
+    }`,
   ].join("\n");
 }
 
