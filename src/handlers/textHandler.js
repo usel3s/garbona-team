@@ -21,6 +21,9 @@ const {
   payoutApprovedUserKeyboard,
   buildChannelMessageHtml,
   buildApprovedChannelSuffix,
+  buildWithdrawConfirmHtml,
+  validateWalletAddress,
+  methodLabel,
 } = require("../services/withdrawalService");
 const { upsertBotMessage } = require("../utils/message");
 const { pe } = require("../utils/emoji");
@@ -28,8 +31,8 @@ const { clearPendingInputs, isBotCommandText } = require("../utils/session");
 const { formatMemberCardHtml } = require("../utils/adminMemberCard");
 const { getCurrencyContext } = require("../services/currencyService");
 const {
-  withdrawMethodKeyboard,
   walletAmountCancelKeyboard,
+  withdrawConfirmKeyboard,
   settingsResultKeyboard,
 } = require("../keyboards/common");
 const {
@@ -86,7 +89,56 @@ function registerTextHandlers(bot) {
       return;
     }
 
+    if (ctx.session?.walletWithdraw?.step === "address") {
+      const st = ctx.session.walletWithdraw;
+      try {
+        await ctx.deleteMessage(ctx.message.message_id);
+      } catch (_) {
+        /* ignore */
+      }
+      const check = validateWalletAddress(st.method, incoming);
+      if (!check.ok) {
+        await upsertBotMessage(
+          ctx,
+          [
+            `${pe("error")} ${check.error}`,
+            "",
+            `Сеть: <b>${methodLabel(st.method)}</b>`,
+            "Введите адрес кошелька ещё раз.",
+          ].join("\n"),
+          { reply_markup: walletAmountCancelKeyboard().reply_markup }
+        );
+        return;
+      }
+
+      const user = await ensureUser(ctx.from);
+      const available = await getAvailableUsd(user);
+      const minW = env.walletMinWithdrawalUsd;
+      ctx.session.walletWithdraw = {
+        step: "amount",
+        method: st.method,
+        address: check.address,
+      };
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("transfer")} <b>Сумма вывода</b>`,
+          "",
+          `Сеть: <b>${methodLabel(st.method)}</b>`,
+          `Кошелёк: <code>${check.address}</code>`,
+          "",
+          `Доступно: <b>${formatMoney(available)}</b>`,
+          `Минимум: <b>${formatMoney(minW)}</b>`,
+          "",
+          "Введите сумму в <b>долларах США ($)</b>.",
+        ].join("\n"),
+        { reply_markup: walletAmountCancelKeyboard().reply_markup }
+      );
+      return;
+    }
+
     if (ctx.session?.walletWithdraw?.step === "amount") {
+      const st = ctx.session.walletWithdraw;
       const user = await ensureUser(ctx.from);
       try {
         await ctx.deleteMessage(ctx.message.message_id);
@@ -113,13 +165,21 @@ function registerTextHandlers(bot) {
         );
         return;
       }
-      ctx.session.walletWithdraw = { step: "method", amount };
+
+      ctx.session.walletWithdraw = {
+        step: "confirm",
+        method: st.method,
+        address: st.address,
+        amount,
+      };
       await upsertBotMessage(
         ctx,
-        `Сумма: <b>${formatMoney(amount)}</b>\n\nВыберите способ вывода:`,
-        {
-          reply_markup: withdrawMethodKeyboard().reply_markup,
-        }
+        buildWithdrawConfirmHtml({
+          method: st.method,
+          address: st.address,
+          amountUsd: amount,
+        }),
+        { reply_markup: withdrawConfirmKeyboard().reply_markup }
       );
       return;
     }

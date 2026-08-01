@@ -1,14 +1,58 @@
 const User = require("../models/User");
 const WithdrawalRequest = require("../models/WithdrawalRequest");
-const { pe } = require("../utils/emoji");
+const { pe, urlBtn } = require("../utils/emoji");
 const { Markup } = require("telegraf");
-const { urlBtn } = require("../utils/emoji");
 
 const LOCK_STATUSES = ["pending", "awaiting_payout_link"];
 
+const METHOD_LABELS = {
+  usdt_trc20: "USDT TRC20",
+  usdt_bep20: "USDT BEP20",
+  ton_gram: "TON (GRAM)",
+  xRocketr: "xRocketr",
+  cryptobot: "CryptoBot",
+  usdt_ton: "USDT TON",
+};
+
 function methodLabel(method) {
-  const map = { xRocketr: "xRocketr", cryptobot: "CryptoBot", usdt_ton: "USDT TON" };
-  return map[method] || method;
+  return METHOD_LABELS[method] || method;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function normalizeWalletAddress(raw) {
+  return String(raw || "").trim().replace(/\s+/g, "");
+}
+
+function validateWalletAddress(method, address) {
+  const addr = normalizeWalletAddress(address);
+  if (!addr || addr.length < 10 || addr.length > 128) {
+    return { ok: false, error: "Некорректный адрес кошелька." };
+  }
+
+  if (method === "usdt_trc20") {
+    if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(addr)) {
+      return { ok: false, error: "Адрес TRC20 должен начинаться с T и содержать 34 символа." };
+    }
+  } else if (method === "usdt_bep20") {
+    if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) {
+      return { ok: false, error: "Адрес BEP20 должен быть в формате 0x… (42 символа)." };
+    }
+  } else if (method === "ton_gram") {
+    if (!/^(EQ|UQ)[A-Za-z0-9_-]{46}$/.test(addr) && !/^0:[a-fA-F0-9]{64}$/.test(addr)) {
+      return {
+        ok: false,
+        error: "Адрес TON должен начинаться с EQ/UQ или быть в формате 0:…",
+      };
+    }
+  }
+
+  return { ok: true, address: addr };
 }
 
 async function sumReservedUsd(telegramId) {
@@ -32,17 +76,21 @@ async function hasPendingRequest(telegramId) {
   return n > 0;
 }
 
-async function createWithdrawalRequest(user, amountUsd, method) {
+async function createWithdrawalRequest(user, amountUsd, method, walletAddress) {
   const available = await getAvailableUsd(user);
   if (amountUsd > available + 1e-9) {
     throw new Error("Недостаточно средств с учётом активных заявок.");
   }
+  const check = validateWalletAddress(method, walletAddress);
+  if (!check.ok) throw new Error(check.error);
+
   return WithdrawalRequest.create({
     userId: user._id,
     telegramId: String(user.telegramId),
     username: user.username || "",
     amountUsd,
     method,
+    walletAddress: check.address,
     status: "pending",
   });
 }
@@ -131,6 +179,7 @@ async function listUserRequests(telegramId, limit = 15) {
 
 function buildChannelMessageHtml(req) {
   const m = methodLabel(req.method);
+  const wallet = String(req.walletAddress || "").trim();
   return [
     `${pe("transfer")} <b>Заявка на выплату</b>`,
     "",
@@ -138,7 +187,22 @@ function buildChannelMessageHtml(req) {
     `<b>User ID:</b> <code>${req.telegramId}</code>`,
     `<b>Username:</b> @${req.username || "—"}`,
     `<b>Сумма:</b> $${Number(req.amountUsd).toFixed(2)}`,
-    `<b>Способ:</b> ${m}`,
+    `<b>Сеть:</b> ${m}`,
+    wallet ? `<b>Кошелёк:</b> <code>${escapeHtml(wallet)}</code>` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildWithdrawConfirmHtml({ method, address, amountUsd }) {
+  return [
+    `${pe("transfer")} <b>Подтверждение вывода</b>`,
+    "",
+    `${pe("coins")} Сеть: <b>${methodLabel(method)}</b>`,
+    `${pe("wallet")} Кошелёк: <code>${escapeHtml(address)}</code>`,
+    `${pe("transfer")} Сумма: <b>$${Number(amountUsd).toFixed(2)}</b>`,
+    "",
+    "Проверьте данные и нажмите <b>Отправить</b>.",
   ].join("\n");
 }
 
@@ -161,9 +225,6 @@ function normalizePayoutUrl(text) {
   }
 }
 
-/**
- * Сообщение пользователю после одобрения вывода + кнопка со ссылкой на транзакцию.
- */
 function buildUserPayoutApprovedMessage() {
   return [
     `${pe("celebrate")} <b>Поздравляем, вам успешно одобрен вывод!</b>`,
@@ -178,6 +239,7 @@ function payoutApprovedUserKeyboard(url) {
 
 module.exports = {
   methodLabel,
+  validateWalletAddress,
   sumReservedUsd,
   getAvailableUsd,
   hasPendingRequest,
@@ -188,6 +250,7 @@ module.exports = {
   rejectPayout,
   listUserRequests,
   buildChannelMessageHtml,
+  buildWithdrawConfirmHtml,
   buildApprovedChannelSuffix,
   buildRejectedChannelSuffix,
   attachChannelMeta,

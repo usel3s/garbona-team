@@ -1,5 +1,15 @@
 const mongoose = require("mongoose");
 
+const WITHDRAWAL_METHODS = [
+  "usdt_trc20",
+  "usdt_bep20",
+  "ton_gram",
+  // legacy
+  "xRocketr",
+  "cryptobot",
+  "usdt_ton",
+];
+
 const withdrawalRequestSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
@@ -8,9 +18,10 @@ const withdrawalRequestSchema = new mongoose.Schema(
     amountUsd: { type: Number, required: true, min: 0 },
     method: {
       type: String,
-      enum: ["xRocketr", "cryptobot", "usdt_ton"],
+      enum: WITHDRAWAL_METHODS,
       required: true,
     },
+    walletAddress: { type: String, default: "" },
     status: {
       type: String,
       enum: ["pending", "awaiting_payout_link", "approved", "rejected"],
@@ -27,3 +38,4 @@ const withdrawalRequestSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model("WithdrawalRequest", withdrawalRequestSchema);
+module.exports.WITHDRAWAL_METHODS = WITHDRAWAL_METHODS;

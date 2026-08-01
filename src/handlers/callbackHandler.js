@@ -50,6 +50,7 @@ const {
   setAwaitingPayoutLink,
   rejectPayout,
   buildChannelMessageHtml,
+  buildWithdrawConfirmHtml,
   buildRejectedChannelSuffix,
   attachChannelMeta,
   resetPendingApproval,
@@ -673,20 +674,20 @@ function registerCallbackHandlers(bot) {
       await ctx.answerCbQuery("Уже есть активная заявка", { show_alert: true });
       return;
     }
-    ctx.session.walletWithdraw = { step: "amount" };
+    ctx.session.walletWithdraw = { step: "method" };
     await ctx.answerCbQuery();
     await upsertBotMessage(
       ctx,
       [
-        `${pe("transfer")} Введите <b>сумму вывода в долларах США ($)</b>.`,
+        `${pe("transfer")} <b>Вывод средств</b>`,
         "",
         `Доступно: <b>${formatDisplayAmount(available, currencyCtx)}</b>`,
         `Минимум: <b>${formatDisplayAmount(minW, currencyCtx)}</b>`,
         "",
-        "<i>Ввод суммы всегда в USD (внутренняя валюта баланса).</i>",
+        "Выберите сеть для отправки:",
       ].join("\n"),
       {
-        reply_markup: walletAmountCancelKeyboard().reply_markup,
+        reply_markup: withdrawMethodKeyboard().reply_markup,
       }
     );
   });
@@ -717,18 +718,55 @@ function registerCallbackHandlers(bot) {
     );
   });
 
-  bot.action(/^wallet:method:(xRocketr|cryptobot|usdt_ton)$/, async (ctx) => {
+  bot.action(/^wallet:method:(usdt_trc20|usdt_bep20|ton_gram)$/, async (ctx) => {
     const method = ctx.match[1];
     const user = await ensureUser(ctx.from);
     const st = ctx.session?.walletWithdraw;
-    if (!st || st.step !== "method" || !Number.isFinite(Number(st.amount))) {
+    if (!st || st.step !== "method") {
       await ctx.answerCbQuery("Начните вывод заново", { show_alert: true });
       return;
     }
+    if (await hasPendingRequest(user.telegramId)) {
+      await ctx.answerCbQuery("Уже есть активная заявка", { show_alert: true });
+      return;
+    }
+
+    ctx.session.walletWithdraw = { step: "address", method };
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("wallet")} <b>Адрес кошелька</b>`,
+        "",
+        `Сеть: <b>${methodLabel(method)}</b>`,
+        "",
+        "Введите адрес кошелька для получения средств.",
+      ].join("\n"),
+      { reply_markup: walletAmountCancelKeyboard().reply_markup }
+    );
+  });
+
+  bot.action("wallet:confirm_send", async (ctx) => {
+    const user = await ensureUser(ctx.from);
+    const st = ctx.session?.walletWithdraw;
+    if (
+      !st ||
+      st.step !== "confirm" ||
+      !st.method ||
+      !st.address ||
+      !Number.isFinite(Number(st.amount))
+    ) {
+      await ctx.answerCbQuery("Начните вывод заново", { show_alert: true });
+      return;
+    }
+
     const amount = Number(st.amount);
+    const method = st.method;
+    const address = st.address;
     ctx.session.walletWithdraw = null;
+
     try {
-      const doc = await createWithdrawalRequest(user, amount, method);
+      const doc = await createWithdrawalRequest(user, amount, method, address);
       const text = buildChannelMessageHtml(doc);
       const msg = await ctx.telegram.sendMessage(env.payoutRequestsChannelId, text, {
         parse_mode: "HTML",
@@ -742,8 +780,9 @@ function registerCallbackHandlers(bot) {
         [
           `${pe("success")} <b>Заявка на выплату создана</b>`,
           "",
+          `Сеть: ${methodLabel(method)}`,
+          `Кошелёк: <code>${address}</code>`,
           `Сумма: ${formatDisplayAmount(amount, currencyCtx)}`,
-          `Способ: ${methodLabel(method)}`,
           "",
           "Ожидайте подтверждения администратора.",
         ].join("\n"),
@@ -773,6 +812,9 @@ function registerCallbackHandlers(bot) {
       return;
     }
     try {
+      const walletLine = updated.walletAddress
+        ? `Кошелёк: <code>${updated.walletAddress}</code>`
+        : null;
       await ctx.telegram.sendMessage(
         ctx.from.id,
         [
@@ -781,10 +823,13 @@ function registerCallbackHandlers(bot) {
           `Заявка: <code>${id}</code>`,
           `Пользователь: @${updated.username || "—"} (<code>${updated.telegramId}</code>)`,
           `Сумма: <b>$${Number(updated.amountUsd).toFixed(2)}</b>`,
-          `Способ: ${methodLabel(updated.method)}`,
+          `Сеть: ${methodLabel(updated.method)}`,
+          walletLine,
           "",
-          "Пришлите <b>следующим сообщением</b> ссылку для пользователя (https://…).",
-        ].join("\n"),
+          "Пришлите <b>следующим сообщением</b> ссылку на транзакцию (https://…).",
+        ]
+          .filter(Boolean)
+          .join("\n"),
         {
           parse_mode: "HTML",
           reply_markup: adminCancelKeyboard().reply_markup,

@@ -88,9 +88,9 @@ function profitsKeyboard() {
 
 function withdrawMethodKeyboard() {
   return Markup.inlineKeyboard([
-    [btn("xRocketr", "wallet:method:xRocketr", "link")],
-    [btn("CryptoBot", "wallet:method:cryptobot", "cryptobot")],
-    [btn("USDT TON", "wallet:method:usdt_ton", "coins")],
+    [btn("USDT TRC20", "wallet:method:usdt_trc20", "coins")],
+    [btn("USDT BEP20", "wallet:method:usdt_bep20", "coins")],
+    [btn("TON (GRAM)", "wallet:method:ton_gram", "transfer")],
     [btn("Отменить", "profile:wallet", "error")],
     [btn("В главное меню", "menu:home", "home")],
   ]);
@@ -98,6 +98,14 @@ function withdrawMethodKeyboard() {
 
 function walletAmountCancelKeyboard() {
   return Markup.inlineKeyboard([
+    [btn("Отменить", "profile:wallet", "error")],
+    [btn("В главное меню", "menu:home", "home")],
+  ]);
+}
+
+function withdrawConfirmKeyboard() {
+  return Markup.inlineKeyboard([
+    [btn("Отправить", "wallet:confirm_send", "success")],
     [btn("Отменить", "profile:wallet", "error")],
     [btn("В главное меню", "menu:home", "home")],
   ]);
@@ -214,6 +222,7 @@ module.exports = {
   profitsKeyboard,
   withdrawMethodKeyboard,
   walletAmountCancelKeyboard,
+  withdrawConfirmKeyboard,
   payoutModerationKeyboard,
   aboutProjectKeyboard,
   aboutRulesBackKeyboard,
