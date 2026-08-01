@@ -39,7 +39,8 @@ const env = {
   steamTaskPollIntervalMs: Number(process.env.STEAM_TASK_POLL_INTERVAL_MS || 3000),
   steamWorkerPercent: Number(process.env.STEAM_WORKER_PERCENT || 80),
   referralTemplateId: Number(process.env.REFERRAL_TEMPLATE_ID || 8697),
-  panelPort: Number(process.env.PANEL_PORT || 8787),
+  // Host platforms (Bothost etc.) inject PORT; PANEL_PORT is for local overrides.
+  panelPort: Number(process.env.PORT || process.env.PANEL_PORT || 8787),
   panelCookieSecret:
     process.env.PANEL_COOKIE_SECRET || process.env.BOT_TOKEN || "garbona-panel-dev",
   panelPublicUrl: String(process.env.PANEL_PUBLIC_URL || "").replace(/\/$/, ""),

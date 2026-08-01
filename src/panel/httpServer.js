@@ -22,8 +22,10 @@ function startPanelServer(bot) {
   });
 
   const port = Number(env.panelPort) || 8787;
-  const server = app.listen(port, () => {
-    logger.info(`Panel server listening on http://127.0.0.1:${port}`);
+  const host = "0.0.0.0";
+  const server = app.listen(port, host, () => {
+    const publicUrl = env.panelPublicUrl || `http://127.0.0.1:${port}`;
+    logger.info(`Panel server listening on http://${host}:${port} → ${publicUrl}`);
   });
 
   return server;
