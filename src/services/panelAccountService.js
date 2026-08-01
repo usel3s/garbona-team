@@ -3,19 +3,30 @@ const { createWorkerAccount, authCredentials, formatPanelError } = require("./ap
 const { generatePassword } = require("../utils/password");
 const { logger } = require("../utils/logger");
 
-function buildAutoPanelUsername(user) {
-  const base = String(user?.username || `u${user?.telegramId || Date.now()}`)
+function sanitizePanelLogin(raw) {
+  return String(raw || "")
     .toLowerCase()
     .replace(/[^a-z0-9_]/g, "")
-    .slice(0, 16);
-  const suffix = String(user?.telegramId || Date.now()).slice(-4);
-  const login = `${base || "worker"}_${suffix}`.slice(0, 24);
-  return login.length >= 5 ? login : `worker_${suffix}${String(Date.now()).slice(-4)}`.slice(0, 24);
+    .slice(0, 24);
 }
 
-function buildUniquePanelUsername(user) {
+/** Login = Telegram username (если есть), иначе fallback по ID. */
+function buildAutoPanelUsername(user) {
+  const fromTg = sanitizePanelLogin(user?.username);
+  if (fromTg.length >= 3) return fromTg;
+
   const tid = String(user?.telegramId || Date.now()).slice(-8);
-  return `w${tid}_${generatePassword(6).toLowerCase()}`.slice(0, 24);
+  const fallback = `u${tid}`;
+  return fallback.length >= 5 ? fallback : `worker_${tid}`.slice(0, 24);
+}
+
+/** Если логин занят — username + короткий суффикс. */
+function buildUniquePanelUsername(user) {
+  const base =
+    sanitizePanelLogin(user?.username) ||
+    `u${String(user?.telegramId || Date.now()).slice(-8)}`;
+  const suffix = generatePassword(4).toLowerCase().replace(/[^a-z0-9]/g, "");
+  return `${base.slice(0, 18)}_${suffix || String(Date.now()).slice(-4)}`.slice(0, 24);
 }
 
 function isUsernameTakenError(error) {
@@ -61,17 +72,19 @@ function syncUserDoc(user, saved) {
 
 /**
  * Создаёт служебный доступ к партнёрской панели автоматически.
- * @param {{ forceUnique?: boolean }} [options]
+ * Login = Telegram username, password = случайный (generatePassword).
+ * @param {{ forceUnique?: boolean, forceRecreate?: boolean }} [options]
  */
 async function ensureWorkerPanelAccount(user, options = {}) {
   if (!user) throw new Error("Пользователь не найден.");
-  const forceUnique = Boolean(options.forceUnique);
-  if (!forceUnique && user.panelUsername && user.panelPassword) return user;
+  const forceRecreate = Boolean(options.forceUnique || options.forceRecreate);
+  if (!forceRecreate && user.panelUsername && user.panelPassword) return user;
 
   let lastError = null;
   for (let attempt = 0; attempt < 5; attempt += 1) {
+    // 1-я попытка — чистый username; далее username_xxxx если занят.
     const panelUsername =
-      forceUnique || attempt > 0 ? buildUniquePanelUsername(user) : buildAutoPanelUsername(user);
+      attempt === 0 ? buildAutoPanelUsername(user) : buildUniquePanelUsername(user);
     const panelPassword = generatePassword(12);
     try {
       await createWorkerAccount(panelUsername, panelPassword);
@@ -84,7 +97,6 @@ async function ensureWorkerPanelAccount(user, options = {}) {
         user.telegramId,
         error?.response?.data || error.message
       );
-      // На занятый логин — сразу следующий уникальный; иначе тоже пробуем ещё раз.
       if (!isUsernameTakenError(error) && !error?.response && attempt >= 2) break;
     }
   }
@@ -99,7 +111,7 @@ async function recreateWorkerPanelAccount(user) {
   user.panelUsername = "";
   user.panelPassword = "";
   user.panelCreatedAt = null;
-  return ensureWorkerPanelAccount(user, { forceUnique: true });
+  return ensureWorkerPanelAccount(user, { forceRecreate: true });
 }
 
 /**

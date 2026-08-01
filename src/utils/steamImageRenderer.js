@@ -15,11 +15,10 @@ const CARD_SLOTS = [
   { iconX: 1409, iconY: 378, textX: 1414 },
 ];
 const ICON_SIZE = 150;
-const ICON_ROTATION = (8.9 * Math.PI) / 180;
 const STEAM_ICON_HOSTS = [
+  "https://steamcommunity-a.akamaihd.net/economy/image/",
   "https://community.steamstatic.com/economy/image/",
   "https://community.cloudflare.steamstatic.com/economy/image/",
-  "https://steamcommunity-a.akamaihd.net/economy/image/",
 ];
 const WEAR_SUFFIXES = [
   "Factory New",
@@ -102,18 +101,23 @@ function buildIconCandidateUrls(item) {
   const raw = item.icon || item.icon_url || item.iconUrl || item.image || "";
   const hash = normalizeSteamIconHash(raw);
 
-  for (const variant of buildMarketNameVariants(itemDisplayName(item))) {
-    urls.push(`https://api.steamapis.com/image/item/730/${encodeURIComponent(variant)}`);
+  // Сначала иконка из uProject (полный URL или economy hash → Steam CDN).
+  if (/^https?:\/\//i.test(String(raw))) {
+    urls.push(String(raw).trim());
   }
-
-  if (/^https?:\/\//i.test(String(raw))) urls.push(String(raw).trim());
   if (looksLikeSteamIconHash(hash)) {
     for (const host of STEAM_ICON_HOSTS) {
-      for (const size of ["/360fx360f", "/180fx180f", ""]) {
+      for (const size of ["", "/360fx360f", "/180fx180f"]) {
         urls.push(`${host}${hash}${size}`);
       }
     }
   }
+
+  // Fallback по имени, если hash из API недоступен.
+  for (const variant of buildMarketNameVariants(itemDisplayName(item))) {
+    urls.push(`https://api.steamapis.com/image/item/730/${encodeURIComponent(variant)}`);
+  }
+
   return [...new Set(urls.filter(Boolean))];
 }
 
@@ -199,14 +203,8 @@ function drawShareIcon(ctx, x, y, size = 94) {
   ctx.restore();
 }
 
-function drawRotatedImage(ctx, image, x, y, size, rotation) {
-  const cx = x + size / 2;
-  const cy = y + size / 2;
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(rotation);
-  ctx.drawImage(image, -size / 2, -size / 2, size, size);
-  ctx.restore();
+function drawIcon(ctx, image, x, y, size) {
+  ctx.drawImage(image, x, y, size, size);
 }
 
 async function renderSteamProfitImage({ items = [], total = 0, workerShare = 0 }) {
@@ -232,7 +230,7 @@ async function renderSteamProfitImage({ items = [], total = 0, workerShare = 0 }
     const { weapon, skin } = parseItemName(itemDisplayName(item));
     const icon = icons[index];
 
-    if (icon) drawRotatedImage(ctx, icon, slot.iconX, slot.iconY, ICON_SIZE, ICON_ROTATION);
+    if (icon) drawIcon(ctx, icon, slot.iconX, slot.iconY, ICON_SIZE);
 
     ctx.fillStyle = "rgba(255, 255, 255, 0.94)";
     ctx.font = "500 19px sans-serif";

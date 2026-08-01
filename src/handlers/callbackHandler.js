@@ -5,7 +5,6 @@ const {
   aboutRulesBackKeyboard,
   settingsKeyboard,
   settingsCancelKeyboard,
-  topWorkersKeyboard,
   walletKeyboard,
   profitsKeyboard,
   walletAmountCancelKeyboard,
@@ -20,6 +19,8 @@ const {
   adminEconomyKeyboard,
   adminCurrencyKeyboard,
   adminStatsKeyboard,
+  adminLogsKeyboard,
+  adminBotLogsKeyboard,
   memberActionKeyboard,
   memberPanelAccountKeyboard,
   memberPanelRecreateConfirmKeyboard,
@@ -27,6 +28,10 @@ const {
   adminResultKeyboard,
 } = require("../keyboards/admin");
 const { renderHome } = require("../commands/start");
+const {
+  renderTopWorkers,
+  renderPublicProfile,
+} = require("../commands/top");
 const {
   ensureUser,
   isAdminTelegramId,
@@ -75,7 +80,7 @@ const {
 } = require("../keyboards/application");
 const { env } = require("../config/env");
 const { getProjectRulesLines } = require("../config/projectRules");
-const { logger } = require("../utils/logger");
+const { logger, getRecentLogsText, DEFAULT_EXPORT_LINES } = require("../utils/logger");
 const { upsertBotMessage, upsertBotPhoto } = require("../utils/message");
 const { pe, btn } = require("../utils/emoji");
 const { formatMemberCardHtml } = require("../utils/adminMemberCard");
@@ -479,89 +484,6 @@ async function renderSettings(ctx) {
   );
 }
 
-function periodSince(period) {
-  const now = Date.now();
-  if (period === "24h") return new Date(now - 24 * 60 * 60 * 1000);
-  if (period === "7d") return new Date(now - 7 * 24 * 60 * 60 * 1000);
-  if (period === "30d") return new Date(now - 30 * 24 * 60 * 60 * 1000);
-  return null;
-}
-
-function topPeriodTopic(period) {
-  const map = {
-    all: "всё время",
-    "24h": "24 часа",
-    "7d": "7 дней",
-    "30d": "30 дней",
-  };
-  return map[period] || map.all;
-}
-
-async function renderTopWorkers(ctx, period = "all", options = {}) {
-  const since = period === "all" ? null : periodSince(period);
-  const match = since ? { createdAt: { $gte: since } } : {};
-  const currencyCtx = await getCurrencyContext();
-  const back = options.back || "menu:home";
-  const periodPrefix = options.periodPrefix || "top:period";
-
-  const agg = await ProfitTransaction.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: "$userId",
-        total: { $sum: "$workerShare" },
-        count: { $sum: 1 },
-      },
-    },
-    { $sort: { total: -1 } },
-    { $limit: 10 },
-  ]);
-
-  const userIds = agg.map((a) => a._id);
-  const members = await User.find({ _id: { $in: userIds } }).select("username telegramId");
-  const byId = new Map(members.map((m) => [String(m._id), m]));
-
-  const rows = agg.map((a) => {
-    const user = byId.get(String(a._id));
-    return {
-      username: user?.username || user?.telegramId || String(a._id),
-      total: Number(a.total || 0),
-      count: Number(a.count || 0),
-    };
-  });
-
-  const totalAmount = rows.reduce((sum, r) => sum + r.total, 0);
-  const totalCount = rows.reduce((sum, r) => sum + (r.count || 0), 0);
-  const medals = [pe("gift"), pe("coins"), pe("tag")];
-  const topic = topPeriodTopic(period);
-
-  const lines = [
-    `${pe("analytics")} <b>Топ воркеров команды</b>`,
-    "",
-    `За <b>${topic}</b> <i>(начислено по профитам)</i>:`,
-    "",
-  ];
-  if (rows.length === 0) {
-    lines.push("Пока нет данных по выбранному периоду.");
-  } else {
-    rows.forEach((r, i) => {
-      const icon = medals[i] || pe("users");
-      const countPart = r.count > 0 ? ` — ${r.count} шт.` : "";
-      lines.push(
-        `${icon} ${r.username} — ${formatDisplayAmount(r.total, currencyCtx)}${countPart}`
-      );
-    });
-    lines.push("");
-    lines.push(
-      `Итого за <b>${topic}</b>: ${formatDisplayAmount(totalAmount, currencyCtx)}${totalCount ? ` — ${totalCount} шт.` : ""}`
-    );
-  }
-
-  await upsertBotMessage(ctx, lines.join("\n"), {
-    reply_markup: topWorkersKeyboard(period, { back, periodPrefix }).reply_markup,
-  });
-}
-
 function registerCallbackHandlers(bot) {
   bot.action("menu:home", async (ctx) => {
     await ctx.answerCbQuery();
@@ -922,7 +844,7 @@ function registerCallbackHandlers(bot) {
       [
         `${pe("info")} <b>Информация о проекте Garbona</b>`,
         "└ Дата открытия: 08.04.2026",
-        `${pe("lock")} Страховой депозит на Lolz: <b>20.000$</b>`,
+        `${pe("lock")} Страховой депозит на Lolz: <b>250$</b>`,
         "",
         `${pe("coins")} Сумма профитов: <b>${formatDisplayAmount(projectStats.totalProfit, currencyCtx)}</b>`,
         `${pe("statistics")} Количество профитов: <b>${projectStats.count}</b>`,
@@ -1010,6 +932,15 @@ function registerCallbackHandlers(bot) {
     await renderTopWorkers(ctx, period);
   });
 
+  bot.action(/^top:user:(\d+):(all|24h|7d|30d)$/, async (ctx) => {
+    const telegramId = ctx.match[1];
+    const period = ctx.match[2];
+    await ctx.answerCbQuery();
+    await renderPublicProfile(ctx, telegramId, period, {
+      back: ctx.session?.ui?.publicProfileBack || "menu:top_workers",
+    });
+  });
+
   bot.action("admin:panel", async (ctx) => {
     if (!requireAdmin(ctx)) return;
     if (ctx.scene?.current) {
@@ -1043,6 +974,109 @@ function registerCallbackHandlers(bot) {
     clearPendingInputs(ctx);
     await ctx.answerCbQuery();
     await renderAdminEconomy(ctx);
+  });
+
+  bot.action("admin:logs", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    clearPendingInputs(ctx);
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("package")} <b>Логи Steam</b>`,
+        "",
+        "Поиск по ID панели или просмотр списка через inline.",
+      ].join("\n"),
+      { reply_markup: adminLogsKeyboard().reply_markup }
+    );
+  });
+
+  bot.action("admin:botlogs", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    clearPendingInputs(ctx);
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("file")} <b>Логи бота</b>`,
+        "",
+        `Выгрузка последних <b>${DEFAULT_EXPORT_LINES}</b> строк из буфера текущего процесса.`,
+      ].join("\n"),
+      { reply_markup: adminBotLogsKeyboard().reply_markup }
+    );
+  });
+
+  bot.action("admin:botlogs:export", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery("Формирую файл…");
+    try {
+      const text = getRecentLogsText(DEFAULT_EXPORT_LINES);
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const filename = `bot-logs-${stamp}.txt`;
+      await ctx.replyWithDocument(
+        { source: Buffer.from(text, "utf8"), filename },
+        {
+          caption: `${pe("file")} Последние ${DEFAULT_EXPORT_LINES} строк логов бота`,
+          parse_mode: "HTML",
+          reply_markup: adminBotLogsKeyboard().reply_markup,
+        }
+      );
+    } catch (error) {
+      logger.error("bot logs export failed", error.message);
+      await ctx.reply(`${pe("error")} Не удалось выгрузить логи: ${error.message}`, {
+        parse_mode: "HTML",
+        reply_markup: adminBotLogsKeyboard().reply_markup,
+      });
+    }
+  });
+
+  bot.action("admin:logs:search", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    ctx.session.adminInput = { type: "search_log" };
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("file")} <b>Поиск лога</b>`,
+        "",
+        "Введите <b>ID лога</b> из панели (только цифры).",
+      ].join("\n"),
+      { reply_markup: adminCancelKeyboard("admin:logs").reply_markup }
+    );
+  });
+
+  bot.action(/^admin:log:inline:(\d+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery("Карточка загружается…");
+  });
+
+  bot.action(/^admin:log:mafile:(\d+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const logId = ctx.match[1];
+    await ctx.answerCbQuery("Собираю MaFile…");
+    try {
+      const {
+        fetchSteamAccountById,
+        buildAdminMaFilePhoto,
+        classifyAccountLog,
+      } = require("../services/steamLogAdminService");
+      const account = await fetchSteamAccountById(logId);
+      if (classifyAccountLog(account) !== "mafile") {
+        await ctx.reply(`${pe("info")} Этот лог не MaFile.`, { parse_mode: "HTML" });
+        return;
+      }
+      const imageBuffer = await buildAdminMaFilePhoto(account);
+      const login = account?.username || account?.steamInfo?.nickname || logId;
+      await ctx.replyWithPhoto(
+        { source: imageBuffer, filename: `steam-mafile-${logId}.png` },
+        {
+          caption: `${pe("gift")} <b>MaFile</b> лога <code>#${logId}</code>\n<code>${login}</code>`,
+          parse_mode: "HTML",
+        }
+      );
+    } catch (error) {
+      await ctx.reply(`${pe("error")} ${error.message}`, { parse_mode: "HTML" });
+    }
   });
 
   bot.action("admin:stats", async (ctx) => {

@@ -212,6 +212,29 @@ function topWorkersKeyboard(selectedPeriod = "all", options = {}) {
   ]);
 }
 
+function publicProfileKeyboard(telegramId, selectedPeriod = "all", options = {}) {
+  const tid = String(telegramId || "");
+  const label = (period, text) => (selectedPeriod === period ? `• ${text} •` : text);
+  const back = options.back || "menu:top_workers";
+  const hidden = Boolean(options.hidden);
+
+  if (hidden) {
+    return Markup.inlineKeyboard([[btn("Назад", back, "home")]]);
+  }
+
+  return Markup.inlineKeyboard([
+    [
+      btn(label("all", "За всё время"), `top:user:${tid}:all`, "calendar"),
+      btn(label("24h", "За 24 часа"), `top:user:${tid}:24h`, "time"),
+    ],
+    [
+      btn(label("7d", "За 7 дней"), `top:user:${tid}:7d`, "calendar"),
+      btn(label("30d", "За 30 дней"), `top:user:${tid}:30d`, "calendar"),
+    ],
+    [btn("Назад", back, "home")],
+  ]);
+}
+
 module.exports = {
   applicationStartKeyboard,
   rulesAcceptKeyboard,
@@ -231,6 +254,7 @@ module.exports = {
   settingsResultKeyboard,
   homeOnlyKeyboard,
   topWorkersKeyboard,
+  publicProfileKeyboard,
   steamLogSellKeyboard,
   steamLogSellPendingKeyboard,
 };

@@ -2,6 +2,7 @@ const { applicationStartKeyboard, participantPanelKeyboard, homeOnlyKeyboard } =
 const { upsertBotMessage } = require("../utils/message");
 const { ensureUser } = require("../services/userService");
 const { getApplicationSubmitGate } = require("../services/applicationService");
+const { renderPublicProfile } = require("./top");
 const { pe } = require("../utils/emoji");
 const { clearPendingInputs } = require("../utils/session");
 
@@ -60,6 +61,16 @@ function registerStartCommand(bot) {
     }
 
     clearPendingInputs(ctx);
+
+    const payload = String(ctx.startPayload || "").trim();
+    const profileMatch = /^u_(\d+)(?:_(all|24h|7d|30d))?$/.exec(payload);
+    if (profileMatch) {
+      const period = profileMatch[2] || "all";
+      await renderPublicProfile(ctx, profileMatch[1], "all", {
+        back: period === "all" ? "menu:top_workers" : `top:period:${period}`,
+      });
+      return;
+    }
 
     await renderHome(ctx);
   });

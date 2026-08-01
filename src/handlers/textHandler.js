@@ -48,6 +48,10 @@ const {
 } = require("../services/panelAccountService");
 const { formatPanelError } = require("../services/apiService");
 const { sendFakeSteamProfit, sendFakeSteamLog } = require("../services/steamMonitorService");
+const {
+  fetchSteamAccountById,
+  sendAdminLogCard,
+} = require("../services/steamLogAdminService");
 const { resolveFakeProfitSevenSkinQueries } = require("../services/steamMarketLookup");
 const { FAKE_STEAM_PROFIT_SKINS_INSTRUCTION_HTML } = require("../utils/fakeSteamProfitInput");
 const {
@@ -287,6 +291,8 @@ function registerTextHandlers(bot) {
               adminInput?.type === "fake_log_owner" ||
               adminInput?.type === "fake_log_fields"
             ? "admin:economy"
+            : adminInput?.type === "search_log"
+              ? "admin:logs"
             : adminInput?.type === "curator_desc" ||
                 adminInput?.type === "curator_percent" ||
                 adminInput?.type === "curator_min_profits" ||
@@ -807,6 +813,40 @@ function registerTextHandlers(bot) {
       await upsertBotMessage(ctx, formatMemberCardHtml(member, currencyCtx), {
         reply_markup: memberActionKeyboard(member.telegramId, member.isBanned, member.isCurator, member.isCaller, member.isModerator).reply_markup,
       });
+      return;
+    }
+
+    if (adminInput?.type === "search_log") {
+      const logId = String(text || "").trim().replace(/\s+/g, "");
+      if (!/^\d+$/.test(logId)) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Введите числовой ID лога из панели.`,
+          { reply_markup: adminCancelKeyboard("admin:logs").reply_markup }
+        );
+        return;
+      }
+      try {
+        const account = await fetchSteamAccountById(logId);
+        ctx.session.adminInput = null;
+        // Удаляем предыдущий UI-экран поиска.
+        const prevId = ctx.session?.ui?.messageId;
+        if (prevId && ctx.chat?.id) {
+          try {
+            await ctx.telegram.deleteMessage(ctx.chat.id, prevId);
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        const sent = await sendAdminLogCard(ctx.telegram, ctx.chat.id, account);
+        if (ctx.session && sent?.message_id) {
+          ctx.session.ui = { ...(ctx.session.ui || {}), messageId: sent.message_id };
+        }
+      } catch (error) {
+        await upsertBotMessage(ctx, `${pe("error")} ${error.message}`, {
+          reply_markup: adminCancelKeyboard("admin:logs").reply_markup,
+        });
+      }
       return;
     }
 

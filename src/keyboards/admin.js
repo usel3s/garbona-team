@@ -4,11 +4,38 @@ const { btn } = require("../utils/emoji");
 /** Корень: только хабы */
 function adminPanelKeyboard() {
   return Markup.inlineKeyboard([
-    [btn("Участники", "admin:users", "users")],
-    [btn("Коммуникация", "admin:comms", "broadcast")],
-    [btn("Экономика", "admin:economy", "coins")],
+    [
+      btn("Участники", "admin:users", "users"),
+      btn("Коммуникация", "admin:comms", "broadcast"),
+    ],
     [btn("Статистика", "admin:stats", "statistics")],
+    [
+      btn("Экономика", "admin:economy", "coins"),
+      btn("Логи Steam", "admin:logs", "package"),
+    ],
+    [btn("Логи бота", "admin:botlogs", "file")],
     [btn("В меню", "menu:home", "home")],
+  ]);
+}
+
+function adminLogsKeyboard() {
+  return Markup.inlineKeyboard([
+    [btn("Поиск по ID", "admin:logs:search", "file")],
+    [
+      {
+        text: "Просмотр логов",
+        switch_inline_query_current_chat: "logs ",
+        icon_custom_emoji_id: "5884479287171485878",
+      },
+    ],
+    [btn("Назад", "admin:panel", "home")],
+  ]);
+}
+
+function adminBotLogsKeyboard() {
+  return Markup.inlineKeyboard([
+    [btn("Выгрузить последние 250 строк", "admin:botlogs:export", "download")],
+    [btn("Назад", "admin:panel", "home")],
   ]);
 }
 
@@ -182,6 +209,8 @@ module.exports = {
   adminEconomyKeyboard,
   adminCurrencyKeyboard,
   adminStatsKeyboard,
+  adminLogsKeyboard,
+  adminBotLogsKeyboard,
   adminCancelKeyboard,
   adminBackKeyboard,
   adminResultKeyboard,

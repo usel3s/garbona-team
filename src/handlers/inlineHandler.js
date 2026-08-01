@@ -21,6 +21,15 @@ const {
 const { pe } = require("../utils/emoji");
 const { logger } = require("../utils/logger");
 const { getProfilePhotoFileId, getProfileThumbnail } = require("../utils/profilePhoto");
+const {
+  listSteamAccountsForAdmin,
+  fetchSteamAccountById,
+  buildAdminLogInlinePreviewHtml,
+  sendAdminLogCard,
+  accountTotalUsd,
+  kindLabel,
+} = require("../services/steamLogAdminService");
+const { adminResultKeyboard } = require("../keyboards/admin");
 
 const MONTHS_RU = [
   "",
@@ -81,6 +90,13 @@ function parseInlineQuery(raw) {
 
   if (q === "wallet" || q === "transactions" || q.startsWith("wallet?")) {
     return { type: "wallet" };
+  }
+
+  if (q === "logs" || q === "log" || q.startsWith("logs ") || q.startsWith("log ")) {
+    return {
+      type: "logs",
+      filter: q.replace(/^logs?\s*/i, "").trim(),
+    };
   }
 
   return { type: "postbot", query: q };
@@ -226,6 +242,7 @@ async function buildWalletResults(user, currencyCtx) {
 
 /** userId → { type, targetId, at } — для замены via-сообщения на карточку с фото */
 const pendingRoleCards = new Map();
+const pendingLogCards = new Map();
 const PENDING_TTL_MS = 20_000;
 
 async function profileTitle(telegram, user) {
@@ -396,6 +413,129 @@ async function replaceViaRoleCard(ctx) {
   return true;
 }
 
+async function buildLogsResults(filter = "") {
+  try {
+    // Если фильтр — чистый ID, пробуем точечный fetch.
+    if (/^\d+$/.test(filter)) {
+      try {
+        const account = await fetchSteamAccountById(filter);
+        return [buildLogInlineArticle(account)];
+      } catch (_) {
+        /* fall through to list */
+      }
+    }
+
+    const rows = await listSteamAccountsForAdmin({ offset: 0, limit: 30, filter });
+    if (!rows.length) {
+      return [
+        articleResult({
+          id: "logs-empty",
+          title: "Логи не найдены",
+          description: filter ? `Нет совпадений: ${filter}` : "Панель не вернула аккаунты",
+          messageText: `${pe("info")} Логи не найдены.`,
+        }),
+      ];
+    }
+    return rows.map((row) => buildLogInlineArticle(row));
+  } catch (error) {
+    logger.warn("inline logs failed", error.message);
+    return [
+      articleResult({
+        id: "logs-error",
+        title: "Ошибка панели",
+        description: String(error.message || "unknown").slice(0, 64),
+        messageText: `${pe("error")} Не удалось загрузить логи: ${error.message}`,
+      }),
+    ];
+  }
+}
+
+function buildLogInlineArticle(account) {
+  const id = String(account?.id || "");
+  const login = account?.username || account?.steamInfo?.nickname || "—";
+  const kind = kindLabel(account);
+  const total = accountTotalUsd(account);
+  return {
+    type: "article",
+    id: `log-${id}`.slice(0, 64),
+    title: `#${id} · ${String(login).slice(0, 40)}`,
+    description: `${kind} · $${Number(total).toFixed(2)}`,
+    input_message_content: {
+      message_text: buildAdminLogInlinePreviewHtml(account),
+      parse_mode: "HTML",
+    },
+    // Маркер для via-замены, если chosen_inline_result опаздывает.
+    reply_markup: {
+      inline_keyboard: [[{ text: "…", callback_data: `admin:log:inline:${id}` }]],
+    },
+  };
+}
+
+async function replaceViaLogCard(ctx) {
+  if (!isAdminTelegramId(ctx.from?.id)) return false;
+
+  const text = String(ctx.message?.text || ctx.message?.caption || "");
+  const isPreview =
+    /Загрузка полной карточки/i.test(text) || /Лог\s*#\d+/i.test(text);
+
+  let logId = null;
+  const pending = pendingLogCards.get(String(ctx.from?.id || ""));
+  if (pending && Date.now() - pending.at < PENDING_TTL_MS) {
+    logId = String(pending.logId);
+    pendingLogCards.delete(String(ctx.from.id));
+  }
+
+  if (!logId) {
+    const fromText = text.match(/Лог\s*#(\d+)/i);
+    if (fromText) logId = fromText[1];
+  }
+
+  const buttons = (ctx.message?.reply_markup?.inline_keyboard || []).flat();
+  for (const button of buttons) {
+    const m = String(button.callback_data || "").match(/^admin:log:inline:(\d+)$/);
+    if (m) {
+      logId = m[1];
+      break;
+    }
+  }
+
+  // Нужен ID и признак, что это наша inline-превьюшка (или был pending).
+  if (!logId) return false;
+  if (!isPreview && !pending && !buttons.some((b) => /^admin:log:inline:/.test(String(b.callback_data || "")))) {
+    return false;
+  }
+
+  const chatId = ctx.chat?.id;
+  const messageId = ctx.message?.message_id;
+  if (!chatId || !messageId) return false;
+
+  try {
+    await ctx.telegram.deleteMessage(chatId, messageId);
+  } catch (_) {
+    /* already gone */
+  }
+
+  try {
+    const account = await fetchSteamAccountById(logId);
+    const sent = await sendAdminLogCard(ctx.telegram, chatId, account);
+    if (ctx.session && sent?.message_id) {
+      ctx.session.ui = { ...(ctx.session.ui || {}), messageId: sent.message_id };
+    }
+    return true;
+  } catch (error) {
+    logger.warn("replaceViaLogCard failed", logId, error.message);
+    await ctx.telegram.sendMessage(
+      chatId,
+      `${pe("error")} Не удалось загрузить лог #${logId}: ${error.message}`,
+      {
+        parse_mode: "HTML",
+        reply_markup: adminResultKeyboard("admin:logs").reply_markup,
+      }
+    );
+    return true;
+  }
+}
+
 async function buildCuratorsResults(telegram, filter = "") {
   return buildRoleResults(telegram, {
     filter,
@@ -460,13 +600,23 @@ async function handlePostbotInline(ctx, query) {
 function registerInlineHandlers(bot) {
   bot.on("chosen_inline_result", async (ctx) => {
     const resultId = String(ctx.chosenInlineResult?.result_id || "");
-    const match = /^(curator|caller)-(\d+)$/.exec(resultId);
-    if (!match) return;
-    pendingRoleCards.set(String(ctx.from.id), {
-      type: match[1],
-      targetId: match[2],
-      at: Date.now(),
-    });
+    const roleMatch = /^(curator|caller)-(\d+)$/.exec(resultId);
+    if (roleMatch) {
+      pendingRoleCards.set(String(ctx.from.id), {
+        type: roleMatch[1],
+        targetId: roleMatch[2],
+        at: Date.now(),
+      });
+      return;
+    }
+
+    const logMatch = /^log-(\d+)$/.exec(resultId);
+    if (logMatch && isAdminTelegramId(ctx.from.id)) {
+      pendingLogCards.set(String(ctx.from.id), {
+        logId: logMatch[1],
+        at: Date.now(),
+      });
+    }
   });
 
   bot.on("message", async (ctx, next) => {
@@ -476,10 +626,14 @@ function registerInlineHandlers(bot) {
     }
 
     try {
+      if (isAdminTelegramId(ctx.from?.id)) {
+        const replacedLog = await replaceViaLogCard(ctx);
+        if (replacedLog) return;
+      }
       const replaced = await replaceViaRoleCard(ctx);
       if (replaced) return;
     } catch (error) {
-      logger.error("Failed to replace inline role card", error);
+      logger.error("Failed to replace inline card", error);
     }
     return next();
   });
@@ -487,6 +641,16 @@ function registerInlineHandlers(bot) {
   bot.on("inline_query", async (ctx) => {
     try {
       const parsed = parseInlineQuery(ctx.inlineQuery.query);
+
+      if (parsed.type === "logs") {
+        if (!isAdminTelegramId(ctx.from.id)) {
+          await ctx.answerInlineQuery([], { cache_time: 1, is_personal: true });
+          return;
+        }
+        const results = await buildLogsResults(parsed.filter);
+        await ctx.answerInlineQuery(results, { cache_time: 1, is_personal: true });
+        return;
+      }
 
       if (parsed.type === "curators") {
         const results = await buildCuratorsResults(ctx.telegram, parsed.filter);
