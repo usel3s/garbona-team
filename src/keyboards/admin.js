@@ -16,7 +16,10 @@ function adminUsersKeyboard() {
   return Markup.inlineKeyboard([
     [btn("Поиск участника", "admin:search", "users")],
     [btn("Воркеры сайтов", "admin:uproject_workers", "users")],
-    [btn("Кураторы", "admin:curators_list", "userVerified")],
+    [
+      btn("Кураторы", "admin:curators_list", "userVerified"),
+      btn("Прозвонщицы", "admin:callers_list", "broadcast"),
+    ],
     [btn("Назад", "admin:panel", "home")],
   ]);
 }
@@ -97,7 +100,7 @@ function adminResultKeyboard(backTo = "admin:users") {
   ]);
 }
 
-function memberActionKeyboard(memberTelegramId, isBanned = false, isCurator = false) {
+function memberActionKeyboard(memberTelegramId, isBanned = false, isCurator = false, isCaller = false) {
   const rows = [
     [
       btn("Начислить профит", `admin:profit:${memberTelegramId}`, "coins"),
@@ -111,10 +114,18 @@ function memberActionKeyboard(memberTelegramId, isBanned = false, isCurator = fa
         `admin:curator:${memberTelegramId}`,
         isCurator ? "userBlocked" : "userVerified"
       ),
+      btn(
+        isCaller ? "Снять прозвонщицу" : "Назначить прозвонщицей",
+        `admin:caller:${memberTelegramId}`,
+        isCaller ? "userBlocked" : "broadcast"
+      ),
     ],
   ];
   if (isCurator) {
     rows.push([btn("Настройки куратора", `admin:curator_cfg:${memberTelegramId}`, "edit")]);
+  }
+  if (isCaller) {
+    rows.push([btn("Настройки прозвонщицы", `admin:caller_cfg:${memberTelegramId}`, "edit")]);
   }
   rows.push(
     [

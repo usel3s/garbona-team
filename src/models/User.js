@@ -12,6 +12,12 @@ const userSchema = new mongoose.Schema(
     curatorMinProfits: { type: Number, default: 0, min: 0 },
     /** Telegram ID куратора, к которому привязан воркер */
     curatorTelegramId: { type: String, default: "", index: true },
+    isCaller: { type: Boolean, default: false, index: true },
+    callerDescription: { type: String, default: "" },
+    callerPercent: { type: Number, default: 80, min: 1, max: 100 },
+    callerMinProfits: { type: Number, default: 0, min: 0 },
+    /** Telegram ID прозвонщицы, к которой привязан воркер */
+    callerTelegramId: { type: String, default: "", index: true },
     isBanned: { type: Boolean, default: false },
     profitPercent: { type: Number, default: 80, min: 1, max: 100 },
     totalProfit: { type: Number, default: 0, min: 0 },

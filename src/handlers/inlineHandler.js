@@ -1,4 +1,4 @@
-const { isAdminTelegramId, getUserByTelegramId, listCurators } = require("../services/userService");
+const { isAdminTelegramId, getUserByTelegramId, listCurators, listCallers } = require("../services/userService");
 const {
   getPostByCode,
   listSavedPosts,
@@ -14,8 +14,13 @@ const {
   buildCuratorCardHtml,
   curatorCardKeyboard,
 } = require("../services/curatorService");
+const {
+  buildCallerCardHtml,
+  callerCardKeyboard,
+} = require("../services/callerService");
 const { pe } = require("../utils/emoji");
 const { logger } = require("../utils/logger");
+const { env } = require("../config/env");
 
 const MONTHS_RU = [
   "",
@@ -59,6 +64,10 @@ function parseInlineQuery(raw) {
 
   if (q === "curators" || q === "curator" || q.startsWith("curators")) {
     return { type: "curators", filter: q.replace(/^curators?\s*/i, "").trim() };
+  }
+
+  if (q === "callers" || q === "caller" || q.startsWith("callers") || q.startsWith("прозвон")) {
+    return { type: "callers", filter: q.replace(/^(callers?|прозвон\w*)\s*/i, "").trim() };
   }
 
   if (q === "profits" || q.startsWith("profits?")) {
@@ -215,21 +224,43 @@ async function buildWalletResults(user, currencyCtx) {
   });
 }
 
-async function curatorThumbnailUrl(telegram, telegramId) {
+async function profileThumbnail(telegram, user) {
+  const username = String(user?.username || "").trim();
+  if (username) {
+    return {
+      url: `https://t.me/i/userpic/320/${encodeURIComponent(username)}.jpg`,
+      width: 320,
+      height: 320,
+    };
+  }
+
   try {
-    const photos = await telegram.getUserProfilePhotos(Number(telegramId), 0, 1);
+    const photos = await telegram.getUserProfilePhotos(Number(user.telegramId), 0, 1);
     const sizes = photos?.photos?.[0];
-    if (!sizes?.length) return "";
-    const best = sizes[sizes.length - 1];
-    if (!best?.file_id) return "";
-    const link = await telegram.getFileLink(best.file_id);
-    return String(link?.href || link || "");
+    if (!sizes?.length) return null;
+
+    const sorted = [...sizes].sort((a, b) => Number(a.width || 0) - Number(b.width || 0));
+    const pick =
+      sorted.find((s) => Number(s.width || 0) >= 160) ||
+      sorted[sorted.length - 1] ||
+      sorted[0];
+    if (!pick?.file_id) return null;
+
+    const file = await telegram.getFile(pick.file_id);
+    const path = file?.file_path;
+    if (!path) return null;
+
+    return {
+      url: `https://api.telegram.org/file/bot${env.botToken}/${path}`,
+      width: Number(pick.width) || 160,
+      height: Number(pick.height) || 160,
+    };
   } catch (_) {
-    return "";
+    return null;
   }
 }
 
-async function curatorTitle(telegram, user) {
+async function profileTitle(telegram, user) {
   try {
     const chat = await telegram.getChat(Number(user.telegramId));
     const name = [chat.first_name, chat.last_name].filter(Boolean).join(" ").trim();
@@ -241,52 +272,97 @@ async function curatorTitle(telegram, user) {
   return `ID ${user.telegramId}`.slice(0, 64);
 }
 
-async function buildCuratorsResults(telegram, filter = "") {
-  let curators = await listCurators();
+async function buildRoleResults(telegram, {
+  filter = "",
+  listFn,
+  emptyId,
+  emptyTitle,
+  emptyText,
+  idPrefix,
+  descriptionPrefix,
+  percentKey,
+  minProfitsKey,
+  buildCardHtml,
+  cardKeyboard,
+}) {
+  let rows = await listFn();
   const needle = String(filter || "").trim().toLowerCase().replace(/^@/, "");
   if (needle) {
-    curators = curators.filter((u) => {
+    rows = rows.filter((u) => {
       const uname = String(u.username || "").toLowerCase();
       const id = String(u.telegramId || "");
       return uname.includes(needle) || id.includes(needle);
     });
   }
 
-  if (!curators.length) {
+  if (!rows.length) {
     return [
       articleResult({
-        id: "curators-empty",
-        title: "Кураторов пока нет",
+        id: emptyId,
+        title: emptyTitle,
         description: "Список пуст",
-        messageText: `${pe("info")} Кураторов пока нет. Загляни позже.`,
+        messageText: emptyText,
       }),
     ];
   }
 
   const results = [];
-  for (const curator of curators.slice(0, 50)) {
-    const title = await curatorTitle(telegram, curator);
-    const thumb = await curatorThumbnailUrl(telegram, curator.telegramId);
-    const percent = Number(curator.curatorPercent) || 80;
-    const minProfits = Math.max(0, Number(curator.curatorMinProfits) || 0);
+  for (const row of rows.slice(0, 50)) {
+    const title = await profileTitle(telegram, row);
+    const thumb = await profileThumbnail(telegram, row);
+    const percent = Number(row[percentKey]) || 80;
+    const minProfits = Math.max(0, Number(row[minProfitsKey]) || 0);
     const item = {
       type: "article",
-      id: `curator-${curator.telegramId}`.slice(0, 64),
+      id: `${idPrefix}-${row.telegramId}`.slice(0, 64),
       title,
-      description: `Куратор · ${percent}% · от ${minProfits} проф.`,
+      description: `${descriptionPrefix} · ${percent}% · от ${minProfits} проф.`,
       input_message_content: {
-        message_text: buildCuratorCardHtml(curator),
+        message_text: buildCardHtml(row),
         parse_mode: "HTML",
       },
-      reply_markup: curatorCardKeyboard(curator.telegramId).reply_markup,
+      reply_markup: cardKeyboard(row).reply_markup,
     };
-    if (thumb) {
-      item.thumbnail_url = thumb;
-      item.thumb_url = thumb;
+    if (thumb?.url) {
+      item.thumbnail_url = thumb.url;
+      item.thumbnail_width = thumb.width;
+      item.thumbnail_height = thumb.height;
     }
     results.push(item);
   }
   return results;
+}
+
+async function buildCuratorsResults(telegram, filter = "") {
+  return buildRoleResults(telegram, {
+    filter,
+    listFn: listCurators,
+    emptyId: "curators-empty",
+    emptyTitle: "Кураторов пока нет",
+    emptyText: `${pe("info")} Кураторов пока нет. Загляни позже.`,
+    idPrefix: "curator",
+    descriptionPrefix: "Куратор",
+    percentKey: "curatorPercent",
+    minProfitsKey: "curatorMinProfits",
+    buildCardHtml: buildCuratorCardHtml,
+    cardKeyboard: curatorCardKeyboard,
+  });
+}
+
+async function buildCallersResults(telegram, filter = "") {
+  return buildRoleResults(telegram, {
+    filter,
+    listFn: listCallers,
+    emptyId: "callers-empty",
+    emptyTitle: "Прозвонщиц пока нет",
+    emptyText: `${pe("info")} Прозвонщиц пока нет. Загляни позже.`,
+    idPrefix: "caller",
+    descriptionPrefix: "Прозвонщица",
+    percentKey: "callerPercent",
+    minProfitsKey: "callerMinProfits",
+    buildCardHtml: buildCallerCardHtml,
+    cardKeyboard: callerCardKeyboard,
+  });
 }
 
 async function handlePostbotInline(ctx, query) {
@@ -325,7 +401,13 @@ function registerInlineHandlers(bot) {
 
       if (parsed.type === "curators") {
         const results = await buildCuratorsResults(ctx.telegram, parsed.filter);
-        await ctx.answerInlineQuery(results, { cache_time: 5, is_personal: false });
+        await ctx.answerInlineQuery(results, { cache_time: 1, is_personal: false });
+        return;
+      }
+
+      if (parsed.type === "callers") {
+        const results = await buildCallersResults(ctx.telegram, parsed.filter);
+        await ctx.answerInlineQuery(results, { cache_time: 1, is_personal: false });
         return;
       }
 

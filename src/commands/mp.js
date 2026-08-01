@@ -14,6 +14,7 @@ function roleLabelForUser(user) {
   if (!user) return "Не в боте";
   if (user.role === "admin") return "Администратор";
   if (user.isCurator) return "Куратор";
+  if (user.isCaller) return "Прозвонщица";
   if (user.isTeamMember) return "Воркер";
   if (user.isBanned) return "Заблокирован";
   return "Пользователь";

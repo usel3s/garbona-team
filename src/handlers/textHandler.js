@@ -49,6 +49,7 @@ const {
   parseFakeSteamLogInput,
 } = require("../utils/fakeSteamLogInput");
 const { updateCuratorSettings } = require("../services/curatorService");
+const { updateCallerSettings } = require("../services/callerService");
 
 function formatMoney(value) {
   return `$${Number(value || 0).toFixed(2)}`;
@@ -214,7 +215,10 @@ function registerTextHandlers(bot) {
             ? "admin:economy"
             : adminInput?.type === "curator_desc" ||
                 adminInput?.type === "curator_percent" ||
-                adminInput?.type === "curator_min_profits"
+                adminInput?.type === "curator_min_profits" ||
+                adminInput?.type === "caller_desc" ||
+                adminInput?.type === "caller_percent" ||
+                adminInput?.type === "caller_min_profits"
               ? `admin:member:${adminInput.telegramId}`
             : adminInput?.type === "app_question_label" ||
                 adminInput?.type === "app_question_prompt"
@@ -251,7 +255,7 @@ function registerTextHandlers(bot) {
         await upsertBotMessage(
           ctx,
           `${pe("success")} Аккаунт сайтов привязан.\n\n${formatMemberCardHtml(member, currencyCtx)}`,
-          { reply_markup: memberActionKeyboard(member.telegramId, member.isBanned, member.isCurator).reply_markup }
+          { reply_markup: memberActionKeyboard(member.telegramId, member.isBanned, member.isCurator, member.isCaller).reply_markup }
         );
       } catch (error) {
         await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`, {
@@ -398,7 +402,80 @@ function registerTextHandlers(bot) {
           reply_markup: memberActionKeyboard(
             member.telegramId,
             member.isBanned,
-            member.isCurator
+            member.isCurator,
+            member.isCaller
+          ).reply_markup,
+        }
+      );
+      return;
+    }
+
+    if (adminInput?.type === "caller_desc") {
+      if (text.length > 500) {
+        await upsertBotMessage(ctx, `${pe("error")} Описание слишком длинное (макс. 500).`, {
+          reply_markup: adminCancelKeyboard(`admin:member:${adminInput.telegramId}`).reply_markup,
+        });
+        return;
+      }
+      try {
+        await updateCallerSettings(adminInput.telegramId, { description: text });
+      } catch (error) {
+        await upsertBotMessage(ctx, `${pe("error")} ${error.message}`, {
+          reply_markup: adminCancelKeyboard(`admin:member:${adminInput.telegramId}`).reply_markup,
+        });
+        return;
+      }
+      ctx.session.adminInput = { type: "caller_percent", telegramId: adminInput.telegramId };
+      await upsertBotMessage(
+        ctx,
+        `${pe("success")} Описание сохранено.\n\n${pe("analytics")} Введите <b>процент</b> прозвонщицы (1–100).`,
+        { reply_markup: adminCancelKeyboard(`admin:member:${adminInput.telegramId}`).reply_markup }
+      );
+      return;
+    }
+
+    if (adminInput?.type === "caller_percent") {
+      const percent = Number(text.replace("%", "").replace(",", "."));
+      try {
+        await updateCallerSettings(adminInput.telegramId, { percent });
+      } catch (error) {
+        await upsertBotMessage(ctx, `${pe("error")} ${error.message}`, {
+          reply_markup: adminCancelKeyboard(`admin:member:${adminInput.telegramId}`).reply_markup,
+        });
+        return;
+      }
+      ctx.session.adminInput = { type: "caller_min_profits", telegramId: adminInput.telegramId };
+      await upsertBotMessage(
+        ctx,
+        `${pe("success")} Процент сохранён: <b>${percent}%</b>\n\n${pe("statistics")} Введите <b>обязательное количество профитов</b> для заявки (целое число ≥ 0).`,
+        { reply_markup: adminCancelKeyboard(`admin:member:${adminInput.telegramId}`).reply_markup }
+      );
+      return;
+    }
+
+    if (adminInput?.type === "caller_min_profits") {
+      const minProfits = Number(text.replace(",", "."));
+      try {
+        if (!Number.isInteger(minProfits)) throw new Error("Введите целое число.");
+        await updateCallerSettings(adminInput.telegramId, { minProfits });
+      } catch (error) {
+        await upsertBotMessage(ctx, `${pe("error")} ${error.message}`, {
+          reply_markup: adminCancelKeyboard(`admin:member:${adminInput.telegramId}`).reply_markup,
+        });
+        return;
+      }
+      const member = await getUserByTelegramId(adminInput.telegramId);
+      ctx.session.adminInput = null;
+      const currencyCtx = await getCurrencyContext();
+      await upsertBotMessage(
+        ctx,
+        `${pe("success")} Настройки прозвонщицы сохранены.\n\n${formatMemberCardHtml(member, currencyCtx)}`,
+        {
+          reply_markup: memberActionKeyboard(
+            member.telegramId,
+            member.isBanned,
+            member.isCurator,
+            member.isCaller
           ).reply_markup,
         }
       );
@@ -612,7 +689,7 @@ function registerTextHandlers(bot) {
       ctx.session.adminInput = null;
       const currencyCtx = await getCurrencyContext();
       await upsertBotMessage(ctx, formatMemberCardHtml(member, currencyCtx), {
-        reply_markup: memberActionKeyboard(member.telegramId, member.isBanned, member.isCurator).reply_markup,
+        reply_markup: memberActionKeyboard(member.telegramId, member.isBanned, member.isCurator, member.isCaller).reply_markup,
       });
       return;
     }

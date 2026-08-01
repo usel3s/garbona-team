@@ -3,6 +3,7 @@ const { env, validateEnv } = require("./config/env");
 const { connectDatabase } = require("./config/db");
 const { registerStartCommand } = require("./commands/start");
 const { registerCuratorCommand } = require("./commands/curator");
+const { registerCallerCommand } = require("./commands/caller");
 const { registerMpCommand } = require("./commands/mp");
 const { registerCallbackHandlers } = require("./handlers/callbackHandler");
 const { registerTextHandlers } = require("./handlers/textHandler");
@@ -87,6 +88,7 @@ async function bootstrap() {
 
   registerStartCommand(bot);
   registerCuratorCommand(bot);
+  registerCallerCommand(bot);
   registerMpCommand(bot);
   registerCallbackHandlers(bot);
   registerSitesHandlers(bot);

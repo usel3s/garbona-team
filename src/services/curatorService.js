@@ -33,7 +33,9 @@ function buildCuratorCardHtml(curator) {
   ].join("\n");
 }
 
-function curatorCardKeyboard(curatorTelegramId) {
+function curatorCardKeyboard(curator) {
+  const curatorTelegramId =
+    typeof curator === "object" && curator != null ? curator.telegramId : curator;
   return Markup.inlineKeyboard([
     [btn("Подать заявку", `curator:apply:${curatorTelegramId}`, "notification")],
   ]);

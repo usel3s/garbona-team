@@ -33,8 +33,10 @@ const {
   setBan,
   setTeamMember,
   setCurator,
+  setCaller,
   getUserByTelegramId,
   listCurators,
+  listCallers,
   toggleAnonymous,
 } = require("../services/userService");
 const {
@@ -98,6 +100,7 @@ const { FAKE_STEAM_PROFIT_SKINS_INSTRUCTION_HTML } = require("../utils/fakeSteam
 const { submitLogSaleRequest } = require("../services/steamMonitorService");
 const SteamLog = require("../models/SteamLog");
 const { curatorsIntroHtml, curatorsIntroKeyboard } = require("../utils/curatorsUi");
+const { callersIntroHtml, callersIntroKeyboard } = require("../utils/callersUi");
 const {
   createCuratorApplication,
   acceptCuratorApplication,
@@ -107,6 +110,7 @@ const {
   updateCuratorSettings,
   buildCuratorCardHtml,
 } = require("../services/curatorService");
+const { updateCallerSettings, buildCallerCardHtml } = require("../services/callerService");
 const { Markup } = require("telegraf");
 
 function requireAdmin(ctx) {
@@ -390,6 +394,7 @@ async function renderProfile(ctx, period = "all") {
   let roleLabel = "Пользователь";
   if (user.role === "admin") roleLabel = "Администратор";
   else if (user.isCurator) roleLabel = "Куратор";
+  else if (user.isCaller) roleLabel = "Прозвонщица";
   else if (user.isTeamMember) roleLabel = "Воркер";
 
   const daysWithTeam = Math.max(
@@ -866,6 +871,13 @@ function registerCallbackHandlers(bot) {
     });
   });
 
+  bot.action("menu:callers", async (ctx) => {
+    await ctx.answerCbQuery();
+    await upsertBotMessage(ctx, callersIntroHtml(), {
+      reply_markup: callersIntroKeyboard().reply_markup,
+    });
+  });
+
   bot.action("about:workers_chat", async (ctx) => {
     await handleAboutProtectedChannelClick(ctx, "workers_chat");
   });
@@ -1145,6 +1157,33 @@ function registerCallbackHandlers(bot) {
     });
   });
 
+  bot.action("admin:callers_list", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    const callers = await listCallers();
+    const lines = [
+      `${pe("broadcast")} <b>Прозвонщицы</b>`,
+      "",
+      `Всего: <b>${callers.length}</b>`,
+      "",
+    ];
+    if (!callers.length) {
+      lines.push("<i>Пока никого нет.</i>");
+    } else {
+      callers.forEach((u, i) => {
+        const nick = u.username ? `@${u.username}` : "без username";
+        lines.push(`${i + 1}. ${nick} · <code>${u.telegramId}</code>`);
+      });
+    }
+    lines.push(
+      "",
+      `${pe("info")} Назначить: <b>Поиск участника</b> → карточка → «Назначить прозвонщицей».`
+    );
+    await upsertBotMessage(ctx, lines.join("\n"), {
+      reply_markup: adminResultKeyboard("admin:users").reply_markup,
+    });
+  });
+
   bot.action("admin:global_percent", async (ctx) => {
     if (!requireAdmin(ctx)) return;
     const current = await getGlobalWorkerPercent(80);
@@ -1209,7 +1248,7 @@ function registerCallbackHandlers(bot) {
     await ctx.answerCbQuery();
     const currencyCtx = await getCurrencyContext();
     await upsertBotMessage(ctx, formatMemberCardHtml(member, currencyCtx), {
-      reply_markup: memberActionKeyboard(telegramId, member.isBanned, member.isCurator).reply_markup,
+      reply_markup: memberActionKeyboard(telegramId, member.isBanned, member.isCurator, member.isCaller).reply_markup,
     });
   });
 
@@ -1230,7 +1269,14 @@ function registerCallbackHandlers(bot) {
       await upsertBotMessage(
         ctx,
         `${pe("success")} Создан новый служебный аккаунт сайтов.\n\n${formatMemberCardHtml(updated, currencyCtx)}`,
-        { reply_markup: memberActionKeyboard(telegramId, updated.isBanned, updated.isCurator).reply_markup }
+        {
+          reply_markup: memberActionKeyboard(
+            telegramId,
+            updated.isBanned,
+            updated.isCurator,
+            updated.isCaller
+          ).reply_markup,
+        }
       );
     } catch (error) {
       await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`, {
@@ -1287,7 +1333,14 @@ function registerCallbackHandlers(bot) {
       await upsertBotMessage(
         ctx,
         `${pe("success")} Служебный аккаунт сайтов создан.\n\n${formatMemberCardHtml(updated, currencyCtx)}`,
-        { reply_markup: memberActionKeyboard(telegramId, updated.isBanned, updated.isCurator).reply_markup }
+        {
+          reply_markup: memberActionKeyboard(
+            telegramId,
+            updated.isBanned,
+            updated.isCurator,
+            updated.isCaller
+          ).reply_markup,
+        }
       );
     } catch (error) {
       await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`, {
@@ -1376,7 +1429,12 @@ function registerCallbackHandlers(bot) {
     await ctx.answerCbQuery("Куратор снят");
     const currencyCtx = await getCurrencyContext();
     await upsertBotMessage(ctx, formatMemberCardHtml(updated, currencyCtx), {
-      reply_markup: memberActionKeyboard(telegramId, updated.isBanned, updated.isCurator).reply_markup,
+      reply_markup: memberActionKeyboard(
+        telegramId,
+        updated.isBanned,
+        updated.isCurator,
+        updated.isCaller
+      ).reply_markup,
     });
   });
 
@@ -1399,6 +1457,66 @@ function registerCallbackHandlers(bot) {
         buildCuratorCardHtml(member),
         "",
         "Введите новое <b>описание</b> куратора.",
+      ].join("\n"),
+      { reply_markup: adminCancelKeyboard(`admin:member:${telegramId}`).reply_markup }
+    );
+  });
+
+  bot.action(/^admin:caller:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const telegramId = ctx.match[1];
+    const member = await getUserByTelegramId(telegramId);
+    if (!member) {
+      await ctx.answerCbQuery("Пользователь не найден", { show_alert: true });
+      return;
+    }
+    const next = !member.isCaller;
+    const updated = await setCaller(telegramId, next);
+    if (next) {
+      ctx.session.adminInput = { type: "caller_desc", telegramId };
+      await ctx.answerCbQuery("Прозвонщица назначена");
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("broadcast")} Прозвонщица назначена: <code>${telegramId}</code>`,
+          "",
+          `${pe("edit")} Введите <b>описание прозвонщицы</b> (текст для карточки).`,
+        ].join("\n"),
+        { reply_markup: adminCancelKeyboard(`admin:member:${telegramId}`).reply_markup }
+      );
+      return;
+    }
+    await ctx.answerCbQuery("Прозвонщица снята");
+    const currencyCtx = await getCurrencyContext();
+    await upsertBotMessage(ctx, formatMemberCardHtml(updated, currencyCtx), {
+      reply_markup: memberActionKeyboard(
+        telegramId,
+        updated.isBanned,
+        updated.isCurator,
+        updated.isCaller
+      ).reply_markup,
+    });
+  });
+
+  bot.action(/^admin:caller_cfg:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const telegramId = ctx.match[1];
+    const member = await getUserByTelegramId(telegramId);
+    if (!member?.isCaller) {
+      await ctx.answerCbQuery("Пользователь не прозвонщица", { show_alert: true });
+      return;
+    }
+    ctx.session.adminInput = { type: "caller_desc", telegramId };
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("edit")} <b>Настройки прозвонщицы</b>`,
+        "",
+        `Сейчас:`,
+        buildCallerCardHtml(member),
+        "",
+        "Введите новое <b>описание</b> прозвонщицы.",
       ].join("\n"),
       { reply_markup: adminCancelKeyboard(`admin:member:${telegramId}`).reply_markup }
     );

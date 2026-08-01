@@ -39,7 +39,10 @@ async function ensureUser(telegramUser) {
 
 async function setTeamMember(telegramId, value) {
   const update = { isTeamMember: value };
-  if (!value) update.isCurator = false;
+  if (!value) {
+    update.isCurator = false;
+    update.isCaller = false;
+  }
   return User.findOneAndUpdate(
     { telegramId: String(telegramId) },
     update,
@@ -54,6 +57,7 @@ async function setBan(telegramId, value) {
       isBanned: value,
       isTeamMember: value ? false : undefined,
       isCurator: value ? false : undefined,
+      isCaller: value ? false : undefined,
     },
     { new: true }
   );
@@ -83,6 +87,36 @@ async function setCurator(telegramId, value) {
 async function listCurators() {
   return User.find({
     isCurator: true,
+    isBanned: { $ne: true },
+  })
+    .sort({ username: 1, createdAt: 1 })
+    .limit(50);
+}
+
+async function setCaller(telegramId, value) {
+  const update = { isCaller: Boolean(value) };
+  if (!value) {
+    update.callerDescription = "";
+    update.callerPercent = 80;
+    update.callerMinProfits = 0;
+  }
+  const updated = await User.findOneAndUpdate(
+    { telegramId: String(telegramId) },
+    update,
+    { new: true }
+  );
+  if (!value) {
+    await User.updateMany(
+      { callerTelegramId: String(telegramId) },
+      { callerTelegramId: "" }
+    );
+  }
+  return updated;
+}
+
+async function listCallers() {
+  return User.find({
+    isCaller: true,
     isBanned: { $ne: true },
   })
     .sort({ username: 1, createdAt: 1 })
@@ -191,6 +225,8 @@ module.exports = {
   setBan,
   setCurator,
   listCurators,
+  setCaller,
+  listCallers,
   listTeamMembers,
   getUserByTelegramId,
   getUserByPanelUsername,
