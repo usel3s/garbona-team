@@ -1,5 +1,5 @@
 const { topWorkersKeyboard, publicProfileKeyboard } = require("../keyboards/common");
-const { getUserByTelegramId } = require("../services/userService");
+const { getUserByTelegramId, ensureUser, isAdminTelegramId } = require("../services/userService");
 const { getCurrencyContext } = require("../services/currencyService");
 const {
   getTopWorkers,
@@ -55,8 +55,24 @@ async function renderTopWorkers(ctx, period = "all", options = {}) {
   });
 }
 
+async function canUseTopCommands(ctx) {
+  const user = await ensureUser(ctx.from);
+  return (
+    isAdminTelegramId(ctx.from.id) ||
+    user.role === "admin" ||
+    user.isTeamMember
+  );
+}
+
 /** Топ по команде в чате (/top, /topd, …) — без клавиатуры меню. */
 async function replyTopCommand(ctx, period = "all") {
+  if (!(await canUseTopCommands(ctx))) {
+    await ctx.reply(`${pe("error")} Команда доступна участникам команды.`, {
+      parse_mode: "HTML",
+    });
+    return;
+  }
+
   const html = await buildTopHtml(ctx, period);
   const commandMessageId = ctx.message?.message_id;
   const chatId = ctx.chat?.id;

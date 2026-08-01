@@ -4,10 +4,6 @@ const { btn, urlBtn, switchInlineBtn } = require("../utils/emoji");
 function applicationStartKeyboard() {
   return Markup.inlineKeyboard([
     [btn("Подать заявку", "menu:apply", "notification")],
-    [
-      btn("Прозвонщицы", "menu:callers", "broadcast"),
-      btn("Кураторы", "menu:curators", "users"),
-    ],
   ]);
 }
 
