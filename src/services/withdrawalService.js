@@ -1,5 +1,6 @@
 const User = require("../models/User");
 const WithdrawalRequest = require("../models/WithdrawalRequest");
+const { env } = require("../config/env");
 const { pe, urlBtn } = require("../utils/emoji");
 const { Markup } = require("telegraf");
 
@@ -16,6 +17,34 @@ const METHOD_LABELS = {
 
 function methodLabel(method) {
   return METHOD_LABELS[method] || method;
+}
+
+function getNetworkFeeUsd(method) {
+  const map = {
+    usdt_trc20: env.withdrawFeeUsdtTrc20,
+    usdt_bep20: env.withdrawFeeUsdtBep20,
+    ton_gram: env.withdrawFeeTonGram,
+    usdt_ton: env.withdrawFeeTonGram,
+    xRocketr: 0,
+    cryptobot: 0,
+  };
+  const fee = Number(map[method] ?? 0);
+  return Number((Number.isFinite(fee) && fee > 0 ? fee : 0).toFixed(2));
+}
+
+/**
+ * Сумма заявки списывается с баланса; комиссия сети вычитается из неё.
+ * @returns {{ amountUsd: number, networkFee: number, payoutAmount: number }}
+ */
+function calcPayoutBreakdown(amountUsd, method) {
+  const amount = Number(Number(amountUsd || 0).toFixed(2));
+  const networkFee = getNetworkFeeUsd(method);
+  const payoutAmount = Number(Math.max(0, amount - networkFee).toFixed(2));
+  return { amountUsd: amount, networkFee, payoutAmount };
+}
+
+function formatUsd(value) {
+  return `$${Number(value || 0).toFixed(2)}`;
 }
 
 function escapeHtml(value) {
@@ -84,11 +113,21 @@ async function createWithdrawalRequest(user, amountUsd, method, walletAddress) {
   const check = validateWalletAddress(method, walletAddress);
   if (!check.ok) throw new Error(check.error);
 
+  const { amountUsd: amount, networkFee, payoutAmount } = calcPayoutBreakdown(
+    amountUsd,
+    method
+  );
+  if (payoutAmount <= 0) {
+    throw new Error(
+      `Сумма должна быть больше комиссии сети (${formatUsd(networkFee)}).`
+    );
+  }
+
   return WithdrawalRequest.create({
     userId: user._id,
     telegramId: String(user.telegramId),
     username: user.username || "",
-    amountUsd,
+    amountUsd: amount,
     method,
     walletAddress: check.address,
     status: "pending",
@@ -180,13 +219,19 @@ async function listUserRequests(telegramId, limit = 15) {
 function buildChannelMessageHtml(req) {
   const m = methodLabel(req.method);
   const wallet = String(req.walletAddress || "").trim();
+  const { amountUsd, networkFee, payoutAmount } = calcPayoutBreakdown(
+    req.amountUsd,
+    req.method
+  );
   return [
     `${pe("transfer")} <b>Заявка на выплату</b>`,
     "",
     `<b>ID:</b> <code>${req._id}</code>`,
     `<b>User ID:</b> <code>${req.telegramId}</code>`,
     `<b>Username:</b> @${req.username || "—"}`,
-    `<b>Сумма:</b> $${Number(req.amountUsd).toFixed(2)}`,
+    `<b>Сумма:</b> ${formatUsd(amountUsd)}`,
+    `<b>Комиссия сети:</b> ${formatUsd(networkFee)}`,
+    `<b>К выплате:</b> ${formatUsd(payoutAmount)}`,
     `<b>Сеть:</b> ${m}`,
     wallet ? `<b>Кошелёк:</b> <code>${escapeHtml(wallet)}</code>` : null,
   ]
@@ -195,12 +240,15 @@ function buildChannelMessageHtml(req) {
 }
 
 function buildWithdrawConfirmHtml({ method, address, amountUsd }) {
+  const { networkFee, payoutAmount } = calcPayoutBreakdown(amountUsd, method);
   return [
     `${pe("transfer")} <b>Подтверждение вывода</b>`,
     "",
     `${pe("coins")} Сеть: <b>${methodLabel(method)}</b>`,
     `${pe("wallet")} Кошелёк: <code>${escapeHtml(address)}</code>`,
-    `${pe("transfer")} Сумма: <b>$${Number(amountUsd).toFixed(2)}</b>`,
+    `${pe("transfer")} Сумма: <b>${formatUsd(amountUsd)}</b>`,
+    `${pe("coins")} Комиссия сети: <b>${formatUsd(networkFee)}</b>`,
+    `${pe("receive")} К выплате: <b>${formatUsd(payoutAmount)}</b>`,
     "",
     "Проверьте данные и нажмите <b>Отправить</b>.",
   ].join("\n");
@@ -225,9 +273,17 @@ function normalizePayoutUrl(text) {
   }
 }
 
-function buildUserPayoutApprovedMessage() {
+function buildUserPayoutApprovedMessage(req) {
+  const { amountUsd, networkFee, payoutAmount } = calcPayoutBreakdown(
+    req?.amountUsd,
+    req?.method
+  );
   return [
     `${pe("celebrate")} <b>Поздравляем, вам успешно одобрен вывод!</b>`,
+    "",
+    `${pe("transfer")} Сумма: <b>${formatUsd(amountUsd)}</b>`,
+    `${pe("coins")} Комиссия сети: <b>${formatUsd(networkFee)}</b>`,
+    `${pe("receive")} К выплате: <b>${formatUsd(payoutAmount)}</b>`,
     "",
     "Транзакция доступна по кнопке ниже.",
   ].join("\n");
@@ -239,6 +295,8 @@ function payoutApprovedUserKeyboard(url) {
 
 module.exports = {
   methodLabel,
+  getNetworkFeeUsd,
+  calcPayoutBreakdown,
   validateWalletAddress,
   sumReservedUsd,
   getAvailableUsd,

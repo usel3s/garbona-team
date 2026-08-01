@@ -56,6 +56,7 @@ const {
   attachChannelMeta,
   resetPendingApproval,
   methodLabel,
+  calcPayoutBreakdown,
 } = require("../services/withdrawalService");
 const {
   getApplicationById,
@@ -80,7 +81,6 @@ const { pe, btn } = require("../utils/emoji");
 const { formatMemberCardHtml } = require("../utils/adminMemberCard");
 const { clearPendingInputs } = require("../utils/session");
 const { renderProfileImage } = require("../utils/profileImageRenderer");
-const { Input } = require("telegraf");
 const ProfitTransaction = require("../models/ProfitTransaction");
 const User = require("../models/User");
 const {
@@ -446,12 +446,13 @@ async function renderProfile(ctx, period = "all") {
   try {
     const imageBuffer = await renderProfileImage({
       days: dash.days,
-      nickname: dash.nickname,
+      nickname:
+        String(ctx.from?.first_name || user.firstName || "").trim() || dash.nickname,
       count: dash.count,
       totalShare: dash.totalShare,
       maxShare: dash.maxShare,
     });
-    await upsertBotPhoto(ctx, Input.fromBuffer(imageBuffer, "profile.png"), {
+    await upsertBotPhoto(ctx, { source: imageBuffer, filename: "profile.png" }, {
       caption,
       parse_mode: "HTML",
       ...keyboard,
@@ -798,6 +799,7 @@ function registerCallbackHandlers(bot) {
       await attachChannelMeta(doc._id, msg.chat.id, msg.message_id);
       await ctx.answerCbQuery("Заявка отправлена");
       const currencyCtx = await getCurrencyContext();
+      const { networkFee, payoutAmount } = calcPayoutBreakdown(amount, method);
       await upsertBotMessage(
         ctx,
         [
@@ -806,6 +808,8 @@ function registerCallbackHandlers(bot) {
           `Сеть: ${methodLabel(method)}`,
           `Кошелёк: <code>${address}</code>`,
           `Сумма: ${formatDisplayAmount(amount, currencyCtx)}`,
+          `Комиссия сети: ${formatDisplayAmount(networkFee, currencyCtx)}`,
+          `К выплате: ${formatDisplayAmount(payoutAmount, currencyCtx)}`,
           "",
           "Ожидайте подтверждения администратора.",
         ].join("\n"),
@@ -838,6 +842,7 @@ function registerCallbackHandlers(bot) {
       const walletLine = updated.walletAddress
         ? `Кошелёк: <code>${updated.walletAddress}</code>`
         : null;
+      const breakdown = calcPayoutBreakdown(updated.amountUsd, updated.method);
       await ctx.telegram.sendMessage(
         ctx.from.id,
         [
@@ -845,7 +850,9 @@ function registerCallbackHandlers(bot) {
           "",
           `Заявка: <code>${id}</code>`,
           `Пользователь: @${updated.username || "—"} (<code>${updated.telegramId}</code>)`,
-          `Сумма: <b>$${Number(updated.amountUsd).toFixed(2)}</b>`,
+          `Сумма: <b>$${breakdown.amountUsd.toFixed(2)}</b>`,
+          `Комиссия сети: <b>$${breakdown.networkFee.toFixed(2)}</b>`,
+          `К выплате: <b>$${breakdown.payoutAmount.toFixed(2)}</b>`,
           `Сеть: ${methodLabel(updated.method)}`,
           walletLine,
           "",

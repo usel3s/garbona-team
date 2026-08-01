@@ -20,6 +20,10 @@ const env = {
   payoutRequestsChannelId:
     process.env.PAYOUT_REQUESTS_CHANNEL_ID || "-1003840719737",
   walletMinWithdrawalUsd: Number(process.env.WALLET_MIN_WITHDRAWAL_USD || 10),
+  /** Комиссия сети при выводе (USD), вычитается из суммы заявки. */
+  withdrawFeeUsdtTrc20: Number(process.env.WITHDRAW_FEE_USDT_TRC20 || 7),
+  withdrawFeeUsdtBep20: Number(process.env.WITHDRAW_FEE_USDT_BEP20 || 1),
+  withdrawFeeTonGram: Number(process.env.WITHDRAW_FEE_TON_GRAM || 0.10),
   uprojectApiBase: process.env.UPROJECT_API_BASE || "https://api.uproject.io",
   uprojectApiUrl: process.env.UPROJECT_API_URL || "https://api.uproject.io/teams/workers/create",
   uprojectApiKey: process.env.UPROJECT_API_KEY || "",

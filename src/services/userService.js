@@ -14,6 +14,11 @@ async function ensureUser(telegramUser) {
       existing.username = telegramUser.username;
       dirty = true;
     }
+    const firstName = String(telegramUser.first_name || "").trim();
+    if (firstName && existing.firstName !== firstName) {
+      existing.firstName = firstName;
+      dirty = true;
+    }
     if (isAdminTelegramId(telegramId)) {
       if (existing.role !== "admin") {
         existing.role = "admin";
@@ -32,6 +37,7 @@ async function ensureUser(telegramUser) {
   return User.create({
     telegramId,
     username: telegramUser.username || "",
+    firstName: String(telegramUser.first_name || "").trim(),
     role: isAdmin ? "admin" : "user",
     isTeamMember: isAdmin,
   });

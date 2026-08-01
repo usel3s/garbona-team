@@ -24,6 +24,7 @@ const {
   buildWithdrawConfirmHtml,
   validateWalletAddress,
   methodLabel,
+  calcPayoutBreakdown,
 } = require("../services/withdrawalService");
 const { upsertBotMessage } = require("../utils/message");
 const { pe } = require("../utils/emoji");
@@ -165,6 +166,15 @@ function registerTextHandlers(bot) {
         );
         return;
       }
+      const { networkFee, payoutAmount } = calcPayoutBreakdown(amount, st.method);
+      if (payoutAmount <= 0) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Сумма должна быть больше комиссии сети (${formatMoney(networkFee)}).`,
+          { reply_markup: walletAmountCancelKeyboard().reply_markup }
+        );
+        return;
+      }
 
       ctx.session.walletWithdraw = {
         step: "confirm",
@@ -213,7 +223,7 @@ function registerTextHandlers(bot) {
             norm,
             ctx.from.id
           );
-          const userHtml = buildUserPayoutApprovedMessage();
+          const userHtml = buildUserPayoutApprovedMessage(request);
           const sent = await ctx.telegram.sendMessage(request.telegramId, userHtml, {
             parse_mode: "HTML",
             reply_markup: payoutApprovedUserKeyboard(norm).reply_markup,

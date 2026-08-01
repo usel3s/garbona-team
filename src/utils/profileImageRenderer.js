@@ -5,17 +5,20 @@ const WIDTH = 1672;
 const HEIGHT = 941;
 const ASSETS_DIR = path.join(__dirname, "../../assets/profile");
 
-/** Слоты значений относительно макета Figma node 431:3 */
+/**
+ * Центр колонки значений (свободная зона справа от лейблов).
+ * Y — baseline для font 52px.
+ */
+const VALUE_CENTER = 1080;
 const SLOTS = {
-  days: { x: 1139, y: 301 + 46 },
-  nickname: { x: 1121, y: 413 + 46 },
-  count: { x: 1134, y: 525 + 46 },
-  total: { x: 1073, y: 637 + 46 },
-  max: { x: 1073, y: 749 + 46 },
+  days: { y: 348 },
+  nickname: { y: 460 },
+  count: { y: 572 },
+  total: { y: 684 },
+  max: { y: 796 },
 };
 
-const FONT = "600 48px sans-serif";
-const WHITE = "rgba(255, 255, 255, 0.96)";
+const FONT = "bold 52px Arial";
 
 function formatMoney(value) {
   return Number(value || 0).toFixed(2);
@@ -26,29 +29,43 @@ function shorten(text, max = 18) {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
-function drawPlain(ctx, text, x, y) {
-  ctx.fillStyle = WHITE;
+function drawShadowed(ctx, text, x, y, fillStyle) {
   ctx.font = FONT;
-  ctx.textAlign = "left";
+  ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.fillText(String(text), x + 2, y + 2);
+  ctx.fillStyle = fillStyle;
   ctx.fillText(String(text), x, y);
 }
 
-function drawMoney(ctx, amount, x, y) {
-  const dollars = `$${formatMoney(amount)}`;
+function drawPlain(ctx, text, y) {
+  drawShadowed(ctx, text, VALUE_CENTER, y, "#FFFFFF");
+}
+
+function drawMoney(ctx, amount, y) {
+  const amountText = formatMoney(amount);
   ctx.font = FONT;
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
 
-  const gradient = ctx.createLinearGradient(x, y - 36, x + 32, y + 8);
-  gradient.addColorStop(0, "rgba(89, 205, 83, 0.92)");
-  gradient.addColorStop(1, "rgba(40, 173, 130, 0.92)");
-  ctx.fillStyle = gradient;
-  ctx.fillText("$", x, y);
-
+  const amountWidth = ctx.measureText(amountText).width;
   const dollarWidth = ctx.measureText("$").width;
-  ctx.fillStyle = WHITE;
-  ctx.fillText(dollars.slice(1), x + dollarWidth, y);
+  const totalWidth = dollarWidth + amountWidth;
+  const left = VALUE_CENTER - totalWidth / 2;
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.fillText("$", left + 2, y + 2);
+  ctx.fillText(amountText, left + dollarWidth + 2, y + 2);
+
+  const gradient = ctx.createLinearGradient(left, y - 40, left + 36, y + 8);
+  gradient.addColorStop(0, "#59CD53");
+  gradient.addColorStop(1, "#28AD82");
+  ctx.fillStyle = gradient;
+  ctx.fillText("$", left, y);
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillText(amountText, left + dollarWidth, y);
 }
 
 /**
@@ -67,11 +84,17 @@ async function renderProfileImage(data) {
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
   }
 
-  drawPlain(ctx, String(Math.max(0, Number(data.days) || 0)), SLOTS.days.x, SLOTS.days.y);
-  drawPlain(ctx, shorten(data.nickname || "—", 16), SLOTS.nickname.x, SLOTS.nickname.y);
-  drawPlain(ctx, String(Math.max(0, Number(data.count) || 0)), SLOTS.count.x, SLOTS.count.y);
-  drawMoney(ctx, data.totalShare, SLOTS.total.x, SLOTS.total.y);
-  drawMoney(ctx, data.maxShare, SLOTS.max.x, SLOTS.max.y);
+  const days = Math.max(0, Number(data?.days) || 0);
+  const nickname = shorten(data?.nickname || "—", 16);
+  const count = Math.max(0, Number(data?.count) || 0);
+  const totalShare = Number(data?.totalShare) || 0;
+  const maxShare = Number(data?.maxShare) || 0;
+
+  drawPlain(ctx, String(days), SLOTS.days.y);
+  drawPlain(ctx, nickname, SLOTS.nickname.y);
+  drawPlain(ctx, String(count), SLOTS.count.y);
+  drawMoney(ctx, totalShare, SLOTS.total.y);
+  drawMoney(ctx, maxShare, SLOTS.max.y);
 
   return canvas.toBuffer("image/png");
 }

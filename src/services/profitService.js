@@ -63,6 +63,8 @@ function daysWithTeam(user) {
 }
 
 function nicknameOf(user) {
+  const firstName = String(user.firstName || user.first_name || "").trim();
+  if (firstName) return firstName;
   return user.username || user.telegramId || "user";
 }
 
