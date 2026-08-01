@@ -6,7 +6,7 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function generateReferralCode(length = 4) {
+function generateReferralCode(length = 6) {
   let out = "";
   for (let i = 0; i < length; i += 1) out += REF_CHARS[Math.floor(Math.random() * REF_CHARS.length)];
   return out;

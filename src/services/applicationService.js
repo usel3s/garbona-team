@@ -43,6 +43,21 @@ async function getApplicationSubmitGate(user) {
     };
   }
 
+  if (!String(user.username || "").trim()) {
+    return {
+      allowed: false,
+      reason: "no_username",
+      message: [
+        `${pe("error")} У вас не установлен username в Telegram.`,
+        "",
+        "Чтобы подать заявку, пожалуйста, установите username в настройках Telegram:",
+        "Настройки → Имя пользователя → Установите username",
+        "",
+        "После этого нажмите /start и попробуйте снова.",
+      ].join("\n"),
+    };
+  }
+
   if (user.isTeamMember) {
     return {
       allowed: false,

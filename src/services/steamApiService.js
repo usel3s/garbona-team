@@ -3,11 +3,16 @@ const { env } = require("../config/env");
 
 const keyHeaders = { "x-api-key": env.uprojectApiKey };
 
+/** Как веб-панель: cookie token без team x-api-key. */
 function panelApi(token) {
   return axios.create({
     baseURL: env.uprojectApiBase,
     timeout: 30000,
-    headers: { ...keyHeaders, Authorization: `Bearer ${token}` },
+    headers: {
+      Cookie: `token=${token}`,
+      Origin: "https://uproject.io",
+      Referer: "https://uproject.io/",
+    },
   });
 }
 

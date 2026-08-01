@@ -38,13 +38,24 @@ function domainLinksKeyboard(domainId, links = [], { team = false } = {}) {
           "link"
         ),
       ]),
-    [btn("Создать ссылку", `sites:link_create:${domainId}`, "link")],
   ];
+  // На командном домене ссылка создаётся только через «Реферальная ссылка».
+  if (!team) {
+    rows.push([btn("Создать ссылку", `sites:link_create:${domainId}`, "link")]);
+    rows.push([btn("Удалить домен", `sites:domain:delete:${domainId}`, "delete")]);
+  }
   if (team) {
     rows.push([btn("Реферальная ссылка", `sites:ref:${domainId}`, "gift")]);
   }
   rows.push([btn("Назад", "menu:sites", "home")]);
   return Markup.inlineKeyboard(rows);
+}
+
+function domainDeleteConfirmKeyboard(domainId) {
+  return Markup.inlineKeyboard([
+    [btn("Да, удалить", `sites:domain:delete:ok:${domainId}`, "error")],
+    [btn("Отмена", `sites:domain:${domainId}`, "home")],
+  ]);
 }
 
 function teamDomainKeyboard(domainId, links = []) {
@@ -148,6 +159,7 @@ module.exports = {
   sitesKeyboard,
   sitesBindConfirmKeyboard,
   domainLinksKeyboard,
+  domainDeleteConfirmKeyboard,
   teamDomainKeyboard,
   linkCreatorKeyboard,
   linkWindowTypeKeyboard,

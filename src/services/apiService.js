@@ -13,11 +13,19 @@ function getAccessToken(payload) {
   return payload?.accessToken || payload?.token || payload?.data?.accessToken || payload?.data?.token || "";
 }
 
+/**
+ * Клиент от имени воркера — как в веб-панели:
+ * Cookie token=… без x-api-key команды, иначе owner ссылок = владелец API-ключа.
+ */
 function panelClient(token) {
   return axios.create({
     baseURL: env.uprojectApiBase,
     timeout: PANEL_TIMEOUT_MS,
-    headers: { "x-api-key": env.uprojectApiKey, Authorization: `Bearer ${token}` },
+    headers: {
+      Cookie: `token=${token}`,
+      Origin: "https://uproject.io",
+      Referer: "https://uproject.io/",
+    },
   });
 }
 
@@ -41,8 +49,15 @@ async function createWorkerAccount(username, password) {
   return response.data;
 }
 
+/** Логин как в веб-панели — без x-api-key команды. */
 async function authCredentials(username, password) {
-  const response = await withPanelRetry(() => baseClient.post("/auth/credentials", { username, password }));
+  const response = await withPanelRetry(() =>
+    axios.post(
+      `${env.uprojectApiBase}/auth/credentials`,
+      { username, password },
+      { timeout: PANEL_TIMEOUT_MS }
+    )
+  );
   return { token: getAccessToken(response.data), data: response.data };
 }
 
@@ -128,6 +143,10 @@ async function getTeamWorkers(token, offset = 0, limit = 100) {
 
 function formatPanelError(error) {
   if (isTimeoutError(error)) return "Панель сайтов не отвечает. Попробуйте ещё раз через минуту.";
+  const status = error?.response?.status;
+  if (status === 502 || status === 503 || status === 504) {
+    return "Панель сайтов временно недоступна. Попробуйте чуть позже.";
+  }
   return error?.response?.data?.message || error?.message || "Неизвестная ошибка панели.";
 }
 

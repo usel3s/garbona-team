@@ -7,14 +7,15 @@ function isAdminTelegramId(telegramId) {
 
 async function ensureUser(telegramUser) {
   const telegramId = String(telegramUser.id);
+  const nextUsername = String(telegramUser.username || "").trim();
+  const firstName = String(telegramUser.first_name || "").trim();
   const existing = await User.findOne({ telegramId });
   if (existing) {
     let dirty = false;
-    if (telegramUser.username && existing.username !== telegramUser.username) {
-      existing.username = telegramUser.username;
+    if (existing.username !== nextUsername) {
+      existing.username = nextUsername;
       dirty = true;
     }
-    const firstName = String(telegramUser.first_name || "").trim();
     if (firstName && existing.firstName !== firstName) {
       existing.firstName = firstName;
       dirty = true;
@@ -36,8 +37,8 @@ async function ensureUser(telegramUser) {
   const isAdmin = isAdminTelegramId(telegramId);
   return User.create({
     telegramId,
-    username: telegramUser.username || "",
-    firstName: String(telegramUser.first_name || "").trim(),
+    username: nextUsername,
+    firstName,
     role: isAdmin ? "admin" : "user",
     isTeamMember: isAdmin,
   });
@@ -249,6 +250,18 @@ async function upsertTeamReferral(telegramId, { domainId, path, panelLinkId }) {
   return user;
 }
 
+async function clearTeamReferralForDomain(telegramId, domainId) {
+  const user = await getUserByTelegramId(telegramId);
+  if (!user) return null;
+  const before = (user.teamReferrals || []).length;
+  user.teamReferrals = (user.teamReferrals || []).filter(
+    (row) => Number(row.domainId) !== Number(domainId)
+  );
+  if (user.teamReferrals.length === before) return user;
+  await user.save();
+  return user;
+}
+
 module.exports = {
   ensureUser,
   isAdminTelegramId,
@@ -271,4 +284,5 @@ module.exports = {
   isTeamReferralPathTaken,
   getTeamReferralForDomain,
   upsertTeamReferral,
+  clearTeamReferralForDomain,
 };
