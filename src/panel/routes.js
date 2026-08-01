@@ -47,6 +47,16 @@ const {
   recreateWorkerPanelAccount,
   bindWorkerPanelAccount,
 } = require("../services/panelAccountService");
+const {
+  listDomains,
+  getDomainDetail,
+  previewAddDomain,
+  addDomain,
+  removeDomain,
+  listTemplates,
+  createLink,
+  listWorkers,
+} = require("../services/adminSitesService");
 const { updateCuratorSettings } = require("../services/curatorService");
 const { updateCallerSettings } = require("../services/callerService");
 const {
@@ -711,6 +721,76 @@ function createPanelRouter(bot) {
       res.json({ member: serializeMember(user, currencyCtx) });
     } catch (error) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  router.get("/admin/sites/domains", requireAdmin, async (req, res) => {
+    try {
+      res.json(await listDomains(req.admin));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.get("/admin/sites/domains/:id", requireAdmin, async (req, res) => {
+    try {
+      res.json(await getDomainDetail(req.admin, req.params.id));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.post("/admin/sites/domains/check", requireAdmin, async (req, res) => {
+    try {
+      res.json(await previewAddDomain(req.admin, req.body?.domain));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.post("/admin/sites/domains", requireAdmin, async (req, res) => {
+    try {
+      res.json(await addDomain(req.admin, req.body?.domain));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.delete("/admin/sites/domains/:id", requireAdmin, async (req, res) => {
+    try {
+      res.json(await removeDomain(req.admin, req.params.id));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.get("/admin/sites/templates", requireAdmin, async (req, res) => {
+    try {
+      res.json(await listTemplates(req.admin));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.post("/admin/sites/domains/:id/links", requireAdmin, async (req, res) => {
+    try {
+      res.json(
+        await createLink(req.admin, req.params.id, {
+          path: req.body?.path,
+          templateId: req.body?.templateId,
+          windowType: req.body?.windowType,
+        })
+      );
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.get("/admin/sites/workers", requireAdmin, async (req, res) => {
+    try {
+      res.json(await listWorkers(req.admin));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
     }
   });
 
