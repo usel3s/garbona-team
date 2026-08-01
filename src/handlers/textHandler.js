@@ -5,6 +5,7 @@ const {
   ensureUser,
   findUserByQuery,
   getUserByTelegramId,
+  addWalletBalanceUsd,
 } = require("../services/userService");
 const { addProfitToUserByTelegramId } = require("../services/profitService");
 const { setGlobalWorkerPercent, setUsdRubRate } = require("../services/settingsService");
@@ -17,6 +18,7 @@ const {
   completePayoutWithLink,
   normalizePayoutUrl,
   buildUserPayoutApprovedMessage,
+  payoutApprovedUserKeyboard,
   buildChannelMessageHtml,
   buildApprovedChannelSuffix,
 } = require("../services/withdrawalService");
@@ -151,9 +153,10 @@ function registerTextHandlers(bot) {
             norm,
             ctx.from.id
           );
-          const userHtml = buildUserPayoutApprovedMessage(norm);
+          const userHtml = buildUserPayoutApprovedMessage();
           const sent = await ctx.telegram.sendMessage(request.telegramId, userHtml, {
             parse_mode: "HTML",
+            reply_markup: payoutApprovedUserKeyboard(norm).reply_markup,
           });
           try {
             await ctx.telegram.pinChatMessage(request.telegramId, sent.message_id, {
@@ -202,6 +205,7 @@ function registerTextHandlers(bot) {
       const cancelBack =
         adminInput?.type === "search_user" ||
         adminInput?.type === "profit" ||
+        adminInput?.type === "wallet_topup" ||
         adminInput?.type === "percent" ||
         adminInput?.type === "panel_bind" ||
         compose
@@ -305,6 +309,60 @@ function registerTextHandlers(bot) {
         `${pe("success")} Начислено ${formatMoney(amount)} пользователю <code>${result.user.telegramId}</code>.\nДоля воркера: ${formatMoney(result.workerShare)}.`,
         { reply_markup: adminResultKeyboard("admin:users").reply_markup }
       );
+      ctx.session.adminInput = null;
+      return;
+    }
+
+    if (adminInput?.type === "wallet_topup") {
+      const amount = Math.round(Number(String(text).replace(",", ".").replace(/\s/g, "")) * 100) / 100;
+      if (!Number.isFinite(amount) || amount <= 0) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Введите сумму в долларах (число больше 0).`,
+          { reply_markup: adminCancelKeyboard(`admin:member:${adminInput.telegramId}`).reply_markup }
+        );
+        return;
+      }
+
+      try {
+        const { user, amountUsd } = await addWalletBalanceUsd(adminInput.telegramId, amount);
+        try {
+          await ctx.telegram.sendMessage(
+            user.telegramId,
+            [
+              `${pe("wallet")} <b>Кошелёк пополнен</b>`,
+              "",
+              `Сумма: <b>${formatMoney(amountUsd)}</b>`,
+              `Баланс: <b>${formatMoney(user.totalProfit)}</b>`,
+            ].join("\n"),
+            { parse_mode: "HTML" }
+          );
+        } catch (_) {
+          /* ignore */
+        }
+
+        await upsertBotMessage(
+          ctx,
+          [
+            `${pe("success")} Кошелёк пополнен на <b>${formatMoney(amountUsd)}</b>.`,
+            `Пользователь: <code>${user.telegramId}</code>`,
+            `Баланс: <b>${formatMoney(user.totalProfit)}</b>`,
+          ].join("\n"),
+          {
+            reply_markup: memberActionKeyboard(
+              user.telegramId,
+              user.isBanned,
+              user.isCurator,
+              user.isCaller
+            ).reply_markup,
+          }
+        );
+      } catch (e) {
+        await upsertBotMessage(ctx, `${pe("error")} ${e.message}`, {
+          reply_markup: adminCancelKeyboard(`admin:member:${adminInput.telegramId}`).reply_markup,
+        });
+        return;
+      }
       ctx.session.adminInput = null;
       return;
     }

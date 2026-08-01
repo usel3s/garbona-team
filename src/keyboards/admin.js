@@ -104,8 +104,9 @@ function memberActionKeyboard(memberTelegramId, isBanned = false, isCurator = fa
   const rows = [
     [
       btn("Начислить профит", `admin:profit:${memberTelegramId}`, "coins"),
-      btn("Процент воркера", `admin:percent:${memberTelegramId}`, "settings"),
+      btn("Пополнить кошелёк", `admin:wallet:${memberTelegramId}`, "wallet"),
     ],
+    [btn("Процент воркера", `admin:percent:${memberTelegramId}`, "settings")],
     [btn("Отправить сообщение", `admin:msg:${memberTelegramId}`, "broadcast")],
     [btn("Аккаунт сайтов", `admin:panelacc:${memberTelegramId}`, "lock")],
     [

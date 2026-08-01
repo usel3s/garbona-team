@@ -1,6 +1,8 @@
 const User = require("../models/User");
 const WithdrawalRequest = require("../models/WithdrawalRequest");
 const { pe } = require("../utils/emoji");
+const { Markup } = require("telegraf");
+const { urlBtn } = require("../utils/emoji");
 
 const LOCK_STATUSES = ["pending", "awaiting_payout_link"];
 
@@ -159,36 +161,19 @@ function normalizePayoutUrl(text) {
   }
 }
 
-function escapeHtmlAttr(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function escapeHtmlText(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
 /**
- * Кликабельная ссылка — полный URL в тексте кнопки (не внутри blockquote).
+ * Сообщение пользователю после одобрения вывода + кнопка со ссылкой на транзакцию.
  */
-function buildUserPayoutApprovedMessage(url) {
-  const href = escapeHtmlAttr(url);
-  const urlVisible = escapeHtmlText(url);
+function buildUserPayoutApprovedMessage() {
   return [
-    `${pe("celebrate")} <b>Выплата одобрена!</b>`,
+    `${pe("celebrate")} <b>Поздравляем, вам успешно одобрен вывод!</b>`,
     "",
-    "<blockquote>Команда проверила ваш запрос — выплата успешно подтверждена и готова к получению.</blockquote>",
-    "",
-    `<a href="${href}">${pe("link")} ${urlVisible}</a>`,
-    "",
-    `<i>${pe("time")} Обратите внимание: необходимо активировать выплату в течение <b>12 часов</b> с момента получения данного уведомления.`,
-    "По истечении этого времени мы не несём ответственности за сохранность и доступность средств.</i>",
+    "Транзакция доступна по кнопке ниже.",
   ].join("\n");
+}
+
+function payoutApprovedUserKeyboard(url) {
+  return Markup.inlineKeyboard([[urlBtn("Открыть транзакцию", url, "link")]]);
 }
 
 module.exports = {
@@ -208,5 +193,6 @@ module.exports = {
   attachChannelMeta,
   normalizePayoutUrl,
   buildUserPayoutApprovedMessage,
+  payoutApprovedUserKeyboard,
   resetPendingApproval,
 };

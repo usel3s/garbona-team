@@ -146,6 +146,21 @@ async function setProfitPercent(telegramId, percent) {
   );
 }
 
+/** Пополнение баланса кошелька на точную сумму в USD (без процента воркера). */
+async function addWalletBalanceUsd(telegramId, amountUsd) {
+  const amount = Math.round(Number(amountUsd) * 100) / 100;
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Сумма должна быть числом больше 0.");
+  }
+  const updated = await User.findOneAndUpdate(
+    { telegramId: String(telegramId) },
+    { $inc: { totalProfit: amount } },
+    { new: true }
+  );
+  if (!updated) throw new Error("Пользователь не найден.");
+  return { user: updated, amountUsd: amount };
+}
+
 async function setUserBio(telegramId, bio) {
   return User.findOneAndUpdate(
     { telegramId: String(telegramId) },
@@ -231,6 +246,7 @@ module.exports = {
   getUserByTelegramId,
   getUserByPanelUsername,
   setProfitPercent,
+  addWalletBalanceUsd,
   setUserBio,
   toggleAnonymous,
   searchTeamMembers,

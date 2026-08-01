@@ -24,7 +24,7 @@ function formatMemberCardHtml(member, currencyCtx) {
     member.isCaller ? `<b>Процент прозвонщицы:</b> ${member.callerPercent ?? 80}%` : null,
     member.isCaller ? `<b>Мин. профитов (прозвон):</b> ${member.callerMinProfits ?? 0}` : null,
     `<b>Заблокирован:</b> ${member.isBanned ? "Да" : "Нет"}`,
-    `<b>Профиты:</b> ${formatDisplayAmount(member.totalProfit || 0, currencyCtx)}`,
+    `<b>Кошелёк:</b> ${formatDisplayAmount(member.totalProfit || 0, currencyCtx)}`,
     `<b>Процент:</b> ${member.profitPercent}%`,
     `<b>Служебный доступ:</b> ${
       member.panelUsername

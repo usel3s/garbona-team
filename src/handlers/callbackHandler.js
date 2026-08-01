@@ -1688,6 +1688,30 @@ function registerCallbackHandlers(bot) {
     );
   });
 
+  bot.action(/^admin:wallet:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const telegramId = ctx.match[1];
+    const member = await getUserByTelegramId(telegramId);
+    if (!member) {
+      await ctx.answerCbQuery("Пользователь не найден", { show_alert: true });
+      return;
+    }
+    ctx.session.adminInput = { type: "wallet_topup", telegramId };
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("wallet")} <b>Пополнение кошелька</b>`,
+        "",
+        `Участник: <code>${telegramId}</code> @${member.username || "—"}`,
+        `Текущий баланс: <b>$${Number(member.totalProfit || 0).toFixed(2)}</b>`,
+        "",
+        "Введите сумму в <b>долларах США ($)</b>. Сумма зачислится на кошелёк целиком (без процента).",
+      ].join("\n"),
+      { reply_markup: adminCancelKeyboard(`admin:member:${telegramId}`).reply_markup }
+    );
+  });
+
   bot.action(/^admin:percent:(.+)$/, async (ctx) => {
     if (!requireAdmin(ctx)) return;
     const telegramId = ctx.match[1];
