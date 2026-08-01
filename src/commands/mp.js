@@ -15,6 +15,39 @@ const {
 const { pe } = require("../utils/emoji");
 const { logger } = require("../utils/logger");
 
+const MP_DELETE_AFTER_MS = 10_000;
+const MP_COOLDOWN_MS = 20_000;
+
+/** @type {Map<string, number>} */
+const mpCooldownUntil = new Map();
+
+async function safeDeleteMessage(telegram, chatId, messageId) {
+  if (!chatId || !messageId) return;
+  try {
+    await telegram.deleteMessage(chatId, messageId);
+  } catch (_) {
+    /* уже удалено / нет прав */
+  }
+}
+
+function scheduleMpCleanup(telegram, chatId, messageIds) {
+  const ids = [...new Set(messageIds.filter(Boolean).map(Number))];
+  setTimeout(() => {
+    for (const id of ids) {
+      safeDeleteMessage(telegram, chatId, id);
+    }
+  }, MP_DELETE_AFTER_MS);
+}
+
+function getMpCooldownLeftMs(telegramId) {
+  const until = mpCooldownUntil.get(String(telegramId)) || 0;
+  return Math.max(0, until - Date.now());
+}
+
+function markMpUsed(telegramId) {
+  mpCooldownUntil.set(String(telegramId), Date.now() + MP_COOLDOWN_MS);
+}
+
 function displayNameFromTelegram(from) {
   const name = [from?.first_name, from?.last_name].filter(Boolean).join(" ").trim();
   if (name) return name;
@@ -149,6 +182,16 @@ function registerMpCommand(bot) {
       return;
     }
 
+    const cooldownLeft = getMpCooldownLeftMs(ctx.from.id);
+    if (cooldownLeft > 0) {
+      const sec = Math.ceil(cooldownLeft / 1000);
+      await ctx.reply(
+        `${pe("time")} Подождите <b>${sec}</b> сек. перед повторным /mp.`,
+        { parse_mode: "HTML" }
+      );
+      return;
+    }
+
     const replied = ctx.message?.reply_to_message?.from;
     if (!replied || replied.is_bot) {
       await ctx.reply(
@@ -164,26 +207,34 @@ function registerMpCommand(bot) {
     const caption = await buildMemberProfileHtml(replied, dbUser, currencyCtx);
     const counts = await getReactionCounts(targetId);
     const keyboard = buildMpReactionKeyboard(targetId, counts);
+    const commandMessageId = ctx.message?.message_id;
+    const chatId = ctx.chat?.id;
 
+    let profileMessageId = null;
     try {
       const imageBuffer = await buildMpImageBuffer(replied, dbUser);
-      await ctx.replyWithPhoto(
+      const sent = await ctx.replyWithPhoto(
         { source: imageBuffer, filename: "mp-profile.png" },
         {
           caption,
           parse_mode: "HTML",
-          reply_to_message_id: ctx.message.message_id,
+          reply_to_message_id: commandMessageId,
           reply_markup: keyboard,
         }
       );
+      profileMessageId = sent?.message_id;
     } catch (error) {
       logger.warn("mp image render failed", error.message);
-      await ctx.reply(caption, {
+      const sent = await ctx.reply(caption, {
         parse_mode: "HTML",
-        reply_to_message_id: ctx.message.message_id,
+        reply_to_message_id: commandMessageId,
         reply_markup: keyboard,
       });
+      profileMessageId = sent?.message_id;
     }
+
+    markMpUsed(ctx.from.id);
+    scheduleMpCleanup(ctx.telegram, chatId, [commandMessageId, profileMessageId]);
   });
 
   bot.action(/^mp:react:(\d+):(heart|plead|poop|horns|call|money)$/, async (ctx) => {
