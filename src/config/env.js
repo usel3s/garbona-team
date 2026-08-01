@@ -39,6 +39,15 @@ const env = {
   steamTaskPollIntervalMs: Number(process.env.STEAM_TASK_POLL_INTERVAL_MS || 3000),
   steamWorkerPercent: Number(process.env.STEAM_WORKER_PERCENT || 80),
   referralTemplateId: Number(process.env.REFERRAL_TEMPLATE_ID || 8697),
+  panelPort: Number(process.env.PANEL_PORT || 8787),
+  panelCookieSecret:
+    process.env.PANEL_COOKIE_SECRET || process.env.BOT_TOKEN || "garbona-panel-dev",
+  panelPublicUrl: String(process.env.PANEL_PUBLIC_URL || "").replace(/\/$/, ""),
+  botUsername: String(process.env.BOT_USERNAME || "").replace(/^@/, ""),
+  /** Temporary: skip Telegram Login / session checks for local panel access. */
+  panelAuthDisabled: ["1", "true", "yes", "on"].includes(
+    String(process.env.PANEL_AUTH_DISABLED || "").trim().toLowerCase()
+  ),
 };
 
 function validateEnv() {

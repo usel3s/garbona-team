@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <meta name="theme-color" content="#111214" />
+    <title>Garbona — вход</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/panel.css" />
+    <link rel="icon" href="assets/logo.png" type="image/png" />
+  </head>
+  <body>
+    <div class="login-page">
+      <div class="login-glow" aria-hidden="true"></div>
+      <div class="login-shell">
+        <main class="login-panel">
+          <div class="brand">
+            <div class="brand-logo">
+              <img src="assets/logo.png" alt="" />
+            </div>
+            <div class="brand-text">
+              <span class="brand-name">Garbona</span>
+              <span class="brand-tagline">панель управления</span>
+            </div>
+          </div>
+
+          <div class="mode-switch" data-mode="login" id="modeSwitch">
+            <span class="mode-indicator" aria-hidden="true"></span>
+            <button type="button" class="mode-btn is-active" data-mode="login">Вход</button>
+            <button type="button" class="mode-btn" data-mode="register">Регистрация</button>
+          </div>
+
+          <div id="loginError" class="login-error" role="alert">
+            <span id="loginErrorText">Не удалось войти</span>
+          </div>
+
+          <h1 class="login-title" id="loginTitle">Вход в аккаунт</h1>
+          <div class="login-subtitle" id="loginSubtitle">
+            Войдите через Telegram, чтобы продолжить.
+          </div>
+
+          <div class="login-actions">
+            <div class="tg-widget-host" id="tgWidget">
+              <button type="button" class="tg-auth-button btn-telegram" id="tgAuthBtn" hidden>
+                <svg width="17" height="16" viewBox="0 0 17 16" fill="none" aria-hidden="true">
+                  <path
+                    d="M1.93152 7.87319C5.42977 6.34908 7.7625 5.34428 8.92964 4.85881C12.2622 3.47269 12.9546 3.23191 13.406 3.22396C13.5052 3.22221 13.7272 3.24681 13.871 3.36348C13.9924 3.46199 14.0258 3.59506 14.0418 3.68845C14.0578 3.78185 14.0776 3.99461 14.0618 4.16085C13.8812 6.05834 13.0998 10.6631 12.7023 12.7883C12.5341 13.6875 12.2029 13.989 11.8822 14.0185C11.1854 14.0827 10.6562 13.558 9.98124 13.1156C8.9251 12.4233 8.32844 11.9923 7.30324 11.3167C6.11847 10.5359 6.88651 10.1068 7.5617 9.40552C7.73844 9.22199 10.8088 6.42924 10.8682 6.17589C10.8756 6.1442 10.8826 6.02609 10.8124 5.96373C10.7422 5.90136 10.6387 5.92269 10.564 5.93966C10.458 5.9637 8.77077 7.07886 5.50227 9.28526C5.02336 9.61406 4.58958 9.77432 4.20092 9.76592C3.77246 9.75666 2.94827 9.52366 2.33557 9.32452C1.58407 9.08019 0.986792 8.95106 1.0388 8.53619C1.06589 8.32012 1.36346 8.09912 1.93152 7.87319Z"
+                    fill="white"
+                  />
+                </svg>
+                <span>Войти через Telegram</span>
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script>
+      (async function () {
+        const errorEl = document.getElementById("loginError");
+        const errorText = document.getElementById("loginErrorText");
+        const switchEl = document.getElementById("modeSwitch");
+        const titleEl = document.getElementById("loginTitle");
+        const subtitleEl = document.getElementById("loginSubtitle");
+        const authBtn = document.getElementById("tgAuthBtn");
+
+        try {
+          const cfg = await GarbonaPanelAuth.getConfig();
+          if (cfg.authDisabled) {
+            location.replace("index.html");
+            return;
+          }
+        } catch (_) {
+          /* continue to login UI */
+        }
+
+        try {
+          await GarbonaPanelAuth.me();
+          location.replace("index.html");
+          return;
+        } catch (_) {
+          /* need login */
+        }
+
+        const copy = {
+          login: {
+            title: "Вход в аккаунт",
+            subtitle: "Войдите через Telegram, чтобы продолжить.",
+          },
+          register: {
+            title: "Создание аккаунта",
+            subtitle: "Регистрация доступна только администраторам через Telegram.",
+          },
+        };
+
+        function setMode(mode) {
+          switchEl.dataset.mode = mode;
+          switchEl.querySelectorAll(".mode-btn").forEach((b) => {
+            b.classList.toggle("is-active", b.dataset.mode === mode);
+          });
+          const c = copy[mode] || copy.login;
+          titleEl.textContent = c.title;
+          subtitleEl.textContent = c.subtitle;
+          errorEl.classList.remove("is-visible");
+        }
+
+        switchEl.querySelectorAll(".mode-btn").forEach((b) => {
+          b.addEventListener("click", () => setMode(b.dataset.mode));
+        });
+
+        window.onTelegramAuth = async function (data) {
+          if (!data) {
+            errorText.textContent = "Авторизация отменена.";
+            errorEl.classList.add("is-visible");
+            return;
+          }
+          errorEl.classList.remove("is-visible");
+          try {
+            await GarbonaPanelAuth.loginTelegram(data);
+            location.replace("index.html");
+          } catch (err) {
+            const map = {
+              not_admin: "Этот Telegram-аккаунт не в ADMIN_IDS.",
+              bad_hash: "Неверная подпись Telegram Login.",
+              expired: "Данные входа устарели. Попробуйте снова.",
+            };
+            errorText.textContent = map[err.message] || err.message || "Ошибка входа";
+            errorEl.classList.add("is-visible");
+          }
+        };
+
+        let botId = "";
+        try {
+          const cfg = await GarbonaPanelAuth.getConfig();
+          botId = String(cfg.botId || "").trim();
+        } catch (err) {
+          errorText.textContent =
+            "Не удалось загрузить /api/config. Откройте панель через сервер (http://127.0.0.1:8787), а не как файл.";
+          errorEl.classList.add("is-visible");
+          return;
+        }
+
+        if (!botId || !/^\d+$/.test(botId)) {
+          errorText.textContent =
+            "BOT_TOKEN не задан или повреждён на сервере — нет bot_id для Telegram Login.";
+          errorEl.classList.add("is-visible");
+          return;
+        }
+
+        authBtn.hidden = false;
+
+        function startTelegramAuth() {
+          if (!window.Telegram?.Login?.auth) {
+            errorText.textContent = "Скрипт Telegram Login ещё не загрузился. Попробуйте ещё раз.";
+            errorEl.classList.add("is-visible");
+            return;
+          }
+          window.Telegram.Login.auth(
+            { bot_id: botId, request_access: true },
+            (data) => window.onTelegramAuth(data)
+          );
+        }
+
+        authBtn.addEventListener("click", startTelegramAuth);
+
+        const script = document.createElement("script");
+        script.async = true;
+        script.src = "https://telegram.org/js/telegram-widget.js?22";
+        script.onerror = () => {
+          errorText.textContent = "Не удалось загрузить telegram-widget.js.";
+          errorEl.classList.add("is-visible");
+        };
+        document.body.appendChild(script);
+      })();
+    </script>
+  </body>
+</html>

@@ -17,7 +17,9 @@
   "dependencies": {
     "@napi-rs/canvas": "^0.1.68",
     "axios": "^1.9.0",
+    "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.5",
+    "express": "^5.2.1",
     "mongoose": "^8.13.2",
     "telegraf": "^4.16.3"
   },

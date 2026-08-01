@@ -144,6 +144,18 @@ async function bootstrap() {
   logger.info("Bot started");
   startSteamMonitor(bot);
 
+  try {
+    const me = await bot.telegram.getMe();
+    if (me?.username && !env.botUsername) {
+      env.botUsername = me.username;
+    }
+  } catch (error) {
+    logger.warn("Failed to resolve bot username", error.message);
+  }
+
+  const { startPanelServer } = require("./panel/httpServer");
+  startPanelServer(bot);
+
   process.once("SIGINT", () => bot.stop("SIGINT"));
   process.once("SIGTERM", () => bot.stop("SIGTERM"));
 }
