@@ -1,12 +1,14 @@
 const path = require("path");
 const axios = require("axios");
-const { createCanvas, loadImage } = require("@napi-rs/canvas");
+const { createCanvas, loadImage, GlobalFonts } = require("@napi-rs/canvas");
 
 const WIDTH = 1672;
 const HEIGHT = 941;
 const ASSETS_DIR = path.join(__dirname, "../../assets/steam-log");
 const BG_PATH = path.join(ASSETS_DIR, "bg.png");
 const FALLBACK_GAME_PATH = path.join(ASSETS_DIR, "game-cs2.png");
+const FONT_PATH = path.join(__dirname, "../../assets/fonts/NotoSans-Bold.ttf");
+const FONT_FAMILY = "SteamLogSans";
 
 /**
  * Позиции из Figma 427:33 (относительно кадра 1672×941).
@@ -21,13 +23,32 @@ const VALUE_SLOTS = {
 };
 
 const GAME_SLOT = { x: 97, y: 722, w: 267, h: 125 };
-const FONT = `500 40px "Segoe UI", Arial, sans-serif`;
+const FONT_SIZE = 40;
 const MONEY_COLOR = "#59CD53";
 const VALUE_COLOR = "#FFFFFF";
 const IMAGE_HEADERS = {
   "User-Agent": "Mozilla/5.0",
   Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
 };
+
+let fontReady = false;
+
+function ensureFont() {
+  if (fontReady) return;
+  try {
+    GlobalFonts.registerFromPath(FONT_PATH, FONT_FAMILY);
+    fontReady = true;
+  } catch (_) {
+    fontReady = false;
+  }
+}
+
+function fontCss() {
+  ensureFont();
+  // На Linux нет Segoe UI/Arial — без bundled-шрифта fillText рисует пусто.
+  if (fontReady) return `700 ${FONT_SIZE}px "${FONT_FAMILY}"`;
+  return `500 ${FONT_SIZE}px "Segoe UI", Arial, sans-serif`;
+}
 
 function formatMoney(value) {
   const num = Number(value);
@@ -152,7 +173,7 @@ async function loadGameImage(account) {
 function drawValue(ctx, text, slot, { color = VALUE_COLOR } = {}) {
   ctx.save();
   ctx.fillStyle = color;
-  ctx.font = FONT;
+  ctx.font = fontCss();
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
   ctx.shadowColor = "rgba(0,0,0,0.45)";

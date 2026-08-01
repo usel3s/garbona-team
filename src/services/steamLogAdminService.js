@@ -275,9 +275,6 @@ function buildAdminLogCardHtml(account) {
     extras.push(`${escapeHtml(key)}: <code>${escapeHtml(value)}</code>`);
   }
   if (extras.length) {
-    lines.push("");
-    lines.push(`${pe("info")} <b>Прочее с панели</b>`);
-    lines.push(...treeBlock(extras.slice(0, 20)));
   }
 
   return lines.join("\n");

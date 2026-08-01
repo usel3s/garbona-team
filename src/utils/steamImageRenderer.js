@@ -1,10 +1,12 @@
 const path = require("path");
 const axios = require("axios");
-const { createCanvas, loadImage } = require("@napi-rs/canvas");
+const { createCanvas, loadImage, GlobalFonts } = require("@napi-rs/canvas");
 
 const WIDTH = 1672;
 const HEIGHT = 941;
 const ASSETS_DIR = path.join(__dirname, "../../assets/steam-profit");
+const FONT_PATH = path.join(__dirname, "../../assets/fonts/NotoSans-Bold.ttf");
+const FONT_FAMILY = "SteamProfitSans";
 const CARD_SLOTS = [
   { iconX: 105, iconY: 384, textX: 107 },
   { iconX: 321, iconY: 378, textX: 323 },
@@ -28,6 +30,24 @@ const WEAR_SUFFIXES = [
   "Battle-Scarred",
 ];
 const IMAGE_HEADERS = { "User-Agent": "Mozilla/5.0", Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8" };
+
+let fontReady = false;
+
+function ensureFont() {
+  if (fontReady) return;
+  try {
+    GlobalFonts.registerFromPath(FONT_PATH, FONT_FAMILY);
+    fontReady = true;
+  } catch (_) {
+    fontReady = false;
+  }
+}
+
+function fontCss(size, weight = "700") {
+  ensureFont();
+  if (fontReady) return `${weight} ${size}px "${FONT_FAMILY}"`;
+  return `500 ${size}px sans-serif`;
+}
 
 function normalizeSteamIconHash(input) {
   const value = String(input || "").trim();
@@ -148,7 +168,7 @@ async function loadSteamIcon(item) {
 
 function drawMoney(ctx, amount, x, y) {
   const dollars = `$${formatMoney(amount)}`;
-  ctx.font = "500 40px sans-serif";
+  ctx.font = fontCss(40);
   const gradient = ctx.createLinearGradient(x, y - 30, x + 28, y + 10);
   gradient.addColorStop(0, "rgba(89, 205, 83, 0.95)");
   gradient.addColorStop(1, "rgba(40, 173, 130, 0.95)");
@@ -196,7 +216,7 @@ function drawShareIcon(ctx, x, y, size = 94) {
     ctx.stroke();
   }
 
-  ctx.font = `600 ${Math.round(size * 0.38)}px sans-serif`;
+  ctx.font = fontCss(Math.round(size * 0.38), "600");
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText("$", cx, cy + size * 0.02);
@@ -233,15 +253,15 @@ async function renderSteamProfitImage({ items = [], total = 0, workerShare = 0 }
     if (icon) drawIcon(ctx, icon, slot.iconX, slot.iconY, ICON_SIZE);
 
     ctx.fillStyle = "rgba(255, 255, 255, 0.94)";
-    ctx.font = "500 19px sans-serif";
+    ctx.font = fontCss(19);
     ctx.fillText(shorten(weapon, 16), slot.textX, 575);
 
     ctx.fillStyle = "rgba(7, 210, 44, 0.8)";
-    ctx.font = "500 14px sans-serif";
+    ctx.font = fontCss(14);
     ctx.fillText(shorten(skin || "—", 18), slot.textX, 595);
 
     ctx.fillStyle = "rgba(255, 255, 255, 0.94)";
-    ctx.font = "500 19px sans-serif";
+    ctx.font = fontCss(19);
     ctx.fillText(`$${formatMoney(item.price)}`, slot.textX, 642);
   }
 
@@ -253,7 +273,7 @@ async function renderSteamProfitImage({ items = [], total = 0, workerShare = 0 }
   drawShareIcon(ctx, 853, 756, 90);
 
   ctx.fillStyle = "rgba(180, 190, 200, 0.85)";
-  ctx.font = "500 18px sans-serif";
+  ctx.font = fontCss(18);
   ctx.fillText("СТОИМОСТЬ ИНВЕНТАРЯ", 514, 778);
   ctx.fillText("ВАША СУММА", 970, 778);
 
