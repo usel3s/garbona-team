@@ -2,6 +2,8 @@ const { Telegraf, session, Scenes } = require("telegraf");
 const { env, validateEnv } = require("./config/env");
 const { connectDatabase } = require("./config/db");
 const { registerStartCommand } = require("./commands/start");
+const { registerCuratorCommand } = require("./commands/curator");
+const { registerMpCommand } = require("./commands/mp");
 const { registerCallbackHandlers } = require("./handlers/callbackHandler");
 const { registerTextHandlers } = require("./handlers/textHandler");
 const { registerInlineHandlers } = require("./handlers/inlineHandler");
@@ -84,6 +86,8 @@ async function bootstrap() {
   });
 
   registerStartCommand(bot);
+  registerCuratorCommand(bot);
+  registerMpCommand(bot);
   registerCallbackHandlers(bot);
   registerSitesHandlers(bot);
   registerTextHandlers(bot);

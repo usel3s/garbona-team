@@ -6,6 +6,12 @@ const userSchema = new mongoose.Schema(
     username: { type: String, default: "" },
     role: { type: String, enum: ["user", "admin"], default: "user" },
     isTeamMember: { type: Boolean, default: false },
+    isCurator: { type: Boolean, default: false, index: true },
+    curatorDescription: { type: String, default: "" },
+    curatorPercent: { type: Number, default: 80, min: 1, max: 100 },
+    curatorMinProfits: { type: Number, default: 0, min: 0 },
+    /** Telegram ID куратора, к которому привязан воркер */
+    curatorTelegramId: { type: String, default: "", index: true },
     isBanned: { type: Boolean, default: false },
     profitPercent: { type: Number, default: 80, min: 1, max: 100 },
     totalProfit: { type: Number, default: 0, min: 0 },

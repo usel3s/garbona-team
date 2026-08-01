@@ -8,6 +8,15 @@ function formatMemberCardHtml(member, currencyCtx) {
     `<b>Username:</b> @${member.username || "unknown"}`,
     `<b>Роль:</b> ${member.role}`,
     `<b>В команде:</b> ${member.isTeamMember ? "Да" : "Нет"}`,
+    `<b>Куратор:</b> ${member.isCurator ? "Да" : "Нет"}`,
+    member.isCurator
+      ? `<b>Описание куратора:</b> ${member.curatorDescription || "—"}`
+      : null,
+    member.isCurator ? `<b>Процент куратора:</b> ${member.curatorPercent ?? 80}%` : null,
+    member.isCurator ? `<b>Мин. профитов:</b> ${member.curatorMinProfits ?? 0}` : null,
+    member.curatorTelegramId
+      ? `<b>Привязан к куратору:</b> <code>${member.curatorTelegramId}</code>`
+      : null,
     `<b>Заблокирован:</b> ${member.isBanned ? "Да" : "Нет"}`,
     `<b>Профиты:</b> ${formatDisplayAmount(member.totalProfit || 0, currencyCtx)}`,
     `<b>Процент:</b> ${member.profitPercent}%`,
@@ -16,7 +25,9 @@ function formatMemberCardHtml(member, currencyCtx) {
         ? `<code>${member.panelUsername}:${member.panelPassword || "—"}</code>`
         : "не создан"
     }`,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 module.exports = { formatMemberCardHtml };

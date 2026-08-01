@@ -16,6 +16,7 @@ function adminUsersKeyboard() {
   return Markup.inlineKeyboard([
     [btn("Поиск участника", "admin:search", "users")],
     [btn("Воркеры сайтов", "admin:uproject_workers", "users")],
+    [btn("Кураторы", "admin:curators_list", "userVerified")],
     [btn("Назад", "admin:panel", "home")],
   ]);
 }
@@ -96,14 +97,26 @@ function adminResultKeyboard(backTo = "admin:users") {
   ]);
 }
 
-function memberActionKeyboard(memberTelegramId, isBanned = false) {
-  return Markup.inlineKeyboard([
+function memberActionKeyboard(memberTelegramId, isBanned = false, isCurator = false) {
+  const rows = [
     [
       btn("Начислить профит", `admin:profit:${memberTelegramId}`, "coins"),
       btn("Процент воркера", `admin:percent:${memberTelegramId}`, "settings"),
     ],
     [btn("Отправить сообщение", `admin:msg:${memberTelegramId}`, "broadcast")],
     [btn("Аккаунт сайтов", `admin:panelacc:${memberTelegramId}`, "lock")],
+    [
+      btn(
+        isCurator ? "Снять куратора" : "Назначить куратором",
+        `admin:curator:${memberTelegramId}`,
+        isCurator ? "userBlocked" : "userVerified"
+      ),
+    ],
+  ];
+  if (isCurator) {
+    rows.push([btn("Настройки куратора", `admin:curator_cfg:${memberTelegramId}`, "edit")]);
+  }
+  rows.push(
     [
       btn("Кикнуть", `admin:kick:${memberTelegramId}`, "delete"),
       btn(
@@ -112,8 +125,9 @@ function memberActionKeyboard(memberTelegramId, isBanned = false) {
         isBanned ? "unlock" : "userBlocked"
       ),
     ],
-    [btn("Назад", "admin:users", "home")],
-  ]);
+    [btn("Назад", "admin:users", "home")]
+  );
+  return Markup.inlineKeyboard(rows);
 }
 
 function memberPanelAccountKeyboard(memberTelegramId, hasAccount = false) {

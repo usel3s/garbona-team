@@ -1,4 +1,4 @@
-const { isAdminTelegramId, getUserByTelegramId } = require("../services/userService");
+const { isAdminTelegramId, getUserByTelegramId, listCurators } = require("../services/userService");
 const {
   getPostByCode,
   listSavedPosts,
@@ -10,6 +10,11 @@ const {
 } = require("../services/profitService");
 const { listUserRequests } = require("../services/withdrawalService");
 const { getCurrencyContext, formatDisplayAmount } = require("../services/currencyService");
+const {
+  buildCuratorCardHtml,
+  curatorCardKeyboard,
+} = require("../services/curatorService");
+const { pe } = require("../utils/emoji");
 const { logger } = require("../utils/logger");
 
 const MONTHS_RU = [
@@ -51,6 +56,10 @@ function formatDateLong(date) {
 function parseInlineQuery(raw) {
   const q = String(raw || "").trim();
   if (!q) return { type: "empty" };
+
+  if (q === "curators" || q === "curator" || q.startsWith("curators")) {
+    return { type: "curators", filter: q.replace(/^curators?\s*/i, "").trim() };
+  }
 
   if (q === "profits" || q.startsWith("profits?")) {
     const params = new URLSearchParams(q.includes("?") ? q.split("?")[1] : "");
@@ -206,6 +215,80 @@ async function buildWalletResults(user, currencyCtx) {
   });
 }
 
+async function curatorThumbnailUrl(telegram, telegramId) {
+  try {
+    const photos = await telegram.getUserProfilePhotos(Number(telegramId), 0, 1);
+    const sizes = photos?.photos?.[0];
+    if (!sizes?.length) return "";
+    const best = sizes[sizes.length - 1];
+    if (!best?.file_id) return "";
+    const link = await telegram.getFileLink(best.file_id);
+    return String(link?.href || link || "");
+  } catch (_) {
+    return "";
+  }
+}
+
+async function curatorTitle(telegram, user) {
+  try {
+    const chat = await telegram.getChat(Number(user.telegramId));
+    const name = [chat.first_name, chat.last_name].filter(Boolean).join(" ").trim();
+    if (name) return name.slice(0, 64);
+  } catch (_) {
+    /* ignore */
+  }
+  if (user.username) return `@${user.username}`.slice(0, 64);
+  return `ID ${user.telegramId}`.slice(0, 64);
+}
+
+async function buildCuratorsResults(telegram, filter = "") {
+  let curators = await listCurators();
+  const needle = String(filter || "").trim().toLowerCase().replace(/^@/, "");
+  if (needle) {
+    curators = curators.filter((u) => {
+      const uname = String(u.username || "").toLowerCase();
+      const id = String(u.telegramId || "");
+      return uname.includes(needle) || id.includes(needle);
+    });
+  }
+
+  if (!curators.length) {
+    return [
+      articleResult({
+        id: "curators-empty",
+        title: "Кураторов пока нет",
+        description: "Список пуст",
+        messageText: `${pe("info")} Кураторов пока нет. Загляни позже.`,
+      }),
+    ];
+  }
+
+  const results = [];
+  for (const curator of curators.slice(0, 50)) {
+    const title = await curatorTitle(telegram, curator);
+    const thumb = await curatorThumbnailUrl(telegram, curator.telegramId);
+    const percent = Number(curator.curatorPercent) || 80;
+    const minProfits = Math.max(0, Number(curator.curatorMinProfits) || 0);
+    const item = {
+      type: "article",
+      id: `curator-${curator.telegramId}`.slice(0, 64),
+      title,
+      description: `Куратор · ${percent}% · от ${minProfits} проф.`,
+      input_message_content: {
+        message_text: buildCuratorCardHtml(curator),
+        parse_mode: "HTML",
+      },
+      reply_markup: curatorCardKeyboard(curator.telegramId).reply_markup,
+    };
+    if (thumb) {
+      item.thumbnail_url = thumb;
+      item.thumb_url = thumb;
+    }
+    results.push(item);
+  }
+  return results;
+}
+
 async function handlePostbotInline(ctx, query) {
   if (!isAdminTelegramId(ctx.from.id)) {
     await ctx.answerInlineQuery([], { cache_time: 1, is_personal: true });
@@ -239,6 +322,12 @@ function registerInlineHandlers(bot) {
   bot.on("inline_query", async (ctx) => {
     try {
       const parsed = parseInlineQuery(ctx.inlineQuery.query);
+
+      if (parsed.type === "curators") {
+        const results = await buildCuratorsResults(ctx.telegram, parsed.filter);
+        await ctx.answerInlineQuery(results, { cache_time: 5, is_personal: false });
+        return;
+      }
 
       if (parsed.type === "profits_list" || parsed.type === "profits_group" || parsed.type === "wallet") {
         const user = await getUserByTelegramId(ctx.from.id);

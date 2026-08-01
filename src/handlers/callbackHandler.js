@@ -32,7 +32,9 @@ const {
   isAdminTelegramId,
   setBan,
   setTeamMember,
+  setCurator,
   getUserByTelegramId,
+  listCurators,
   toggleAnonymous,
 } = require("../services/userService");
 const {
@@ -95,6 +97,16 @@ const { getAdminDashboardStats } = require("../services/adminStatsService");
 const { FAKE_STEAM_PROFIT_SKINS_INSTRUCTION_HTML } = require("../utils/fakeSteamProfitInput");
 const { submitLogSaleRequest } = require("../services/steamMonitorService");
 const SteamLog = require("../models/SteamLog");
+const { curatorsIntroHtml, curatorsIntroKeyboard } = require("../utils/curatorsUi");
+const {
+  createCuratorApplication,
+  acceptCuratorApplication,
+  rejectCuratorApplication,
+  curatorApplicationModerationKeyboard,
+  buildCuratorApplicationNotifyHtml,
+  updateCuratorSettings,
+  buildCuratorCardHtml,
+} = require("../services/curatorService");
 const { Markup } = require("telegraf");
 
 function requireAdmin(ctx) {
@@ -375,8 +387,11 @@ async function handleAboutProtectedChannelClick(ctx, channelKey) {
 async function renderProfile(ctx, period = "all") {
   const user = await ensureUser(ctx.from);
   const currencyCtx = await getCurrencyContext();
-  const roleLabel =
-    user.role === "admin" ? "Администратор" : user.isTeamMember ? "Воркер" : "Пользователь";
+  let roleLabel = "Пользователь";
+  if (user.role === "admin") roleLabel = "Администратор";
+  else if (user.isCurator) roleLabel = "Куратор";
+  else if (user.isTeamMember) roleLabel = "Воркер";
+
   const daysWithTeam = Math.max(
     1,
     Math.floor((Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24))
@@ -388,9 +403,18 @@ async function renderProfile(ctx, period = "all") {
   const lines = [
     `${pe("profile")} <b>Твой профиль</b> [<code>${user.telegramId}</code>]`,
     ` ┖ Статус: ${roleLabel}`,
-    "",
-    `${pe("statistics")} <b>Статистика ${periodLabel(period)}:</b>`,
   ];
+
+  if (user.curatorTelegramId && !user.isCurator) {
+    const bound = await getUserByTelegramId(user.curatorTelegramId);
+    const curatorLabel = bound?.username
+      ? `@${bound.username}`
+      : `<code>${user.curatorTelegramId}</code>`;
+    lines.push(` ┖ Куратор: ${curatorLabel}`);
+  }
+
+  lines.push("");
+  lines.push(`${pe("statistics")} <b>Статистика ${periodLabel(period)}:</b>`);
 
   if (operationsCount > 0) {
     lines.push(` ┖ Профит: ${formatDisplayAmount(periodProfit, currencyCtx)}`);
@@ -818,6 +842,7 @@ function registerCallbackHandlers(bot) {
       [
         `${pe("info")} <b>Информация о проекте Garbona</b>`,
         "└ Дата открытия: 08.04.2026",
+        `${pe("lock")} Страховой депозит на Lolz: <b>20.000$</b>`,
         "",
         `${pe("coins")} Сумма профитов: <b>${formatDisplayAmount(projectStats.totalProfit, currencyCtx)}</b>`,
         `${pe("statistics")} Количество профитов: <b>${projectStats.count}</b>`,
@@ -832,6 +857,13 @@ function registerCallbackHandlers(bot) {
         ).reply_markup,
       }
     );
+  });
+
+  bot.action("menu:curators", async (ctx) => {
+    await ctx.answerCbQuery();
+    await upsertBotMessage(ctx, curatorsIntroHtml(), {
+      reply_markup: curatorsIntroKeyboard().reply_markup,
+    });
   });
 
   bot.action("about:workers_chat", async (ctx) => {
@@ -1086,6 +1118,33 @@ function registerCallbackHandlers(bot) {
     }
   });
 
+  bot.action("admin:curators_list", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    const curators = await listCurators();
+    const lines = [
+      `${pe("userVerified")} <b>Кураторы</b>`,
+      "",
+      `Всего: <b>${curators.length}</b>`,
+      "",
+    ];
+    if (!curators.length) {
+      lines.push("<i>Пока никого нет.</i>");
+    } else {
+      curators.forEach((u, i) => {
+        const nick = u.username ? `@${u.username}` : "без username";
+        lines.push(`${i + 1}. ${nick} · <code>${u.telegramId}</code>`);
+      });
+    }
+    lines.push(
+      "",
+      `${pe("info")} Назначить: <b>Поиск участника</b> → карточка → «Назначить куратором».`
+    );
+    await upsertBotMessage(ctx, lines.join("\n"), {
+      reply_markup: adminResultKeyboard("admin:users").reply_markup,
+    });
+  });
+
   bot.action("admin:global_percent", async (ctx) => {
     if (!requireAdmin(ctx)) return;
     const current = await getGlobalWorkerPercent(80);
@@ -1150,7 +1209,7 @@ function registerCallbackHandlers(bot) {
     await ctx.answerCbQuery();
     const currencyCtx = await getCurrencyContext();
     await upsertBotMessage(ctx, formatMemberCardHtml(member, currencyCtx), {
-      reply_markup: memberActionKeyboard(telegramId, member.isBanned).reply_markup,
+      reply_markup: memberActionKeyboard(telegramId, member.isBanned, member.isCurator).reply_markup,
     });
   });
 
@@ -1171,7 +1230,7 @@ function registerCallbackHandlers(bot) {
       await upsertBotMessage(
         ctx,
         `${pe("success")} Создан новый служебный аккаунт сайтов.\n\n${formatMemberCardHtml(updated, currencyCtx)}`,
-        { reply_markup: memberActionKeyboard(telegramId, updated.isBanned).reply_markup }
+        { reply_markup: memberActionKeyboard(telegramId, updated.isBanned, updated.isCurator).reply_markup }
       );
     } catch (error) {
       await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`, {
@@ -1228,7 +1287,7 @@ function registerCallbackHandlers(bot) {
       await upsertBotMessage(
         ctx,
         `${pe("success")} Служебный аккаунт сайтов создан.\n\n${formatMemberCardHtml(updated, currencyCtx)}`,
-        { reply_markup: memberActionKeyboard(telegramId, updated.isBanned).reply_markup }
+        { reply_markup: memberActionKeyboard(telegramId, updated.isBanned, updated.isCurator).reply_markup }
       );
     } catch (error) {
       await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`, {
@@ -1288,6 +1347,162 @@ function registerCallbackHandlers(bot) {
       ].join("\n"),
       { reply_markup: memberPanelAccountKeyboard(telegramId, hasAccount).reply_markup }
     );
+  });
+
+  bot.action(/^admin:curator:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const telegramId = ctx.match[1];
+    const member = await getUserByTelegramId(telegramId);
+    if (!member) {
+      await ctx.answerCbQuery("Пользователь не найден", { show_alert: true });
+      return;
+    }
+    const next = !member.isCurator;
+    const updated = await setCurator(telegramId, next);
+    if (next) {
+      ctx.session.adminInput = { type: "curator_desc", telegramId };
+      await ctx.answerCbQuery("Куратор назначен");
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("userVerified")} Куратор назначен: <code>${telegramId}</code>`,
+          "",
+          `${pe("edit")} Введите <b>описание куратора</b> (текст для карточки).`,
+        ].join("\n"),
+        { reply_markup: adminCancelKeyboard(`admin:member:${telegramId}`).reply_markup }
+      );
+      return;
+    }
+    await ctx.answerCbQuery("Куратор снят");
+    const currencyCtx = await getCurrencyContext();
+    await upsertBotMessage(ctx, formatMemberCardHtml(updated, currencyCtx), {
+      reply_markup: memberActionKeyboard(telegramId, updated.isBanned, updated.isCurator).reply_markup,
+    });
+  });
+
+  bot.action(/^admin:curator_cfg:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const telegramId = ctx.match[1];
+    const member = await getUserByTelegramId(telegramId);
+    if (!member?.isCurator) {
+      await ctx.answerCbQuery("Пользователь не куратор", { show_alert: true });
+      return;
+    }
+    ctx.session.adminInput = { type: "curator_desc", telegramId };
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("edit")} <b>Настройки куратора</b>`,
+        "",
+        `Сейчас:`,
+        buildCuratorCardHtml(member),
+        "",
+        "Введите новое <b>описание</b> куратора.",
+      ].join("\n"),
+      { reply_markup: adminCancelKeyboard(`admin:member:${telegramId}`).reply_markup }
+    );
+  });
+
+  bot.action(/^curator:apply:(.+)$/, async (ctx) => {
+    const curatorTelegramId = ctx.match[1];
+    const applicant = await ensureUser(ctx.from);
+    if (applicant.isBanned) {
+      await ctx.answerCbQuery("Доступ ограничен", { show_alert: true });
+      return;
+    }
+    const curator = await getUserByTelegramId(curatorTelegramId);
+    if (!curator?.isCurator) {
+      await ctx.answerCbQuery("Куратор не найден", { show_alert: true });
+      return;
+    }
+    try {
+      const app = await createCuratorApplication(applicant, curator);
+      try {
+        await ctx.telegram.sendMessage(
+          curator.telegramId,
+          buildCuratorApplicationNotifyHtml(applicant),
+          {
+            parse_mode: "HTML",
+            reply_markup: curatorApplicationModerationKeyboard(app._id.toString()).reply_markup,
+          }
+        );
+      } catch (error) {
+        logger.warn("curator notify failed", curator.telegramId, error.message);
+      }
+      await ctx.answerCbQuery("Заявка отправлена");
+      try {
+        await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+      } catch (_) {
+        /* ignore */
+      }
+      await ctx.reply(
+        [
+          `${pe("success")} <b>Заявка куратору отправлена</b>`,
+          "",
+          `${pe("time")} Ожидайте решения.`,
+        ].join("\n"),
+        { parse_mode: "HTML" }
+      );
+    } catch (error) {
+      await ctx.answerCbQuery(error.message || "Ошибка", { show_alert: true });
+    }
+  });
+
+  bot.action(/^curator:accept:([a-f0-9]{24})$/i, async (ctx) => {
+    try {
+      const { applicant } = await acceptCuratorApplication(ctx.match[1], ctx.from.id);
+      await ctx.answerCbQuery("Заявка принята");
+      try {
+        await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+      } catch (_) {
+        /* ignore */
+      }
+      try {
+        await ctx.reply(`${pe("success")} Заявка принята.`, { parse_mode: "HTML" });
+      } catch (_) {
+        /* ignore */
+      }
+      try {
+        await ctx.telegram.sendMessage(
+          applicant.telegramId,
+          `${pe("success")} <b>Куратор принял вашу заявку.</b>\nВы привязаны к куратору.`,
+          { parse_mode: "HTML" }
+        );
+      } catch (_) {
+        /* ignore */
+      }
+    } catch (error) {
+      await ctx.answerCbQuery(error.message || "Ошибка", { show_alert: true });
+    }
+  });
+
+  bot.action(/^curator:reject:([a-f0-9]{24})$/i, async (ctx) => {
+    try {
+      const app = await rejectCuratorApplication(ctx.match[1], ctx.from.id);
+      await ctx.answerCbQuery("Заявка отклонена");
+      try {
+        await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+      } catch (_) {
+        /* ignore */
+      }
+      try {
+        await ctx.reply(`${pe("error")} Заявка отклонена.`, { parse_mode: "HTML" });
+      } catch (_) {
+        /* ignore */
+      }
+      try {
+        await ctx.telegram.sendMessage(
+          app.applicantTelegramId,
+          `${pe("error")} Куратор отклонил вашу заявку.`,
+          { parse_mode: "HTML" }
+        );
+      } catch (_) {
+        /* ignore */
+      }
+    } catch (error) {
+      await ctx.answerCbQuery(error.message || "Ошибка", { show_alert: true });
+    }
   });
 
   bot.action(/^admin:kick:(.+)$/, async (ctx) => {

@@ -2,7 +2,10 @@ const { Markup } = require("telegraf");
 const { btn, urlBtn, switchInlineBtn } = require("../utils/emoji");
 
 function applicationStartKeyboard() {
-  return Markup.inlineKeyboard([[btn("Подать заявку", "menu:apply", "notification")]]);
+  return Markup.inlineKeyboard([
+    [btn("Подать заявку", "menu:apply", "notification")],
+    [btn("Кураторы", "menu:curators", "users")],
+  ]);
 }
 
 function rulesAcceptKeyboard() {
@@ -22,8 +25,9 @@ function participantPanelKeyboard(isAdmin) {
     [btn("Сайты", "menu:sites", "link")],
     [
       btn("О проекте", "menu:about", "info"),
-      btn("Настройки", "menu:settings", "settings"),
+      btn("Кураторы", "menu:curators", "users"),
     ],
+    [btn("Настройки", "menu:settings", "settings")],
     [btn("Топ воркеров", "menu:top_workers", "analytics")],
   ];
   if (isAdmin) {
