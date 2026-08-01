@@ -20,7 +20,7 @@ const {
 } = require("../services/callerService");
 const { pe } = require("../utils/emoji");
 const { logger } = require("../utils/logger");
-const { env } = require("../config/env");
+const { getProfilePhotoFileId, getProfileThumbnail } = require("../utils/profilePhoto");
 
 const MONTHS_RU = [
   "",
@@ -224,41 +224,9 @@ async function buildWalletResults(user, currencyCtx) {
   });
 }
 
-async function profileThumbnail(telegram, user) {
-  const username = String(user?.username || "").trim();
-  if (username) {
-    return {
-      url: `https://t.me/i/userpic/320/${encodeURIComponent(username)}.jpg`,
-      width: 320,
-      height: 320,
-    };
-  }
-
-  try {
-    const photos = await telegram.getUserProfilePhotos(Number(user.telegramId), 0, 1);
-    const sizes = photos?.photos?.[0];
-    if (!sizes?.length) return null;
-
-    const sorted = [...sizes].sort((a, b) => Number(a.width || 0) - Number(b.width || 0));
-    const pick =
-      sorted.find((s) => Number(s.width || 0) >= 160) ||
-      sorted[sorted.length - 1] ||
-      sorted[0];
-    if (!pick?.file_id) return null;
-
-    const file = await telegram.getFile(pick.file_id);
-    const path = file?.file_path;
-    if (!path) return null;
-
-    return {
-      url: `https://api.telegram.org/file/bot${env.botToken}/${path}`,
-      width: Number(pick.width) || 160,
-      height: Number(pick.height) || 160,
-    };
-  } catch (_) {
-    return null;
-  }
-}
+/** userId → { type, targetId, at } — для замены via-сообщения на карточку с фото */
+const pendingRoleCards = new Map();
+const PENDING_TTL_MS = 20_000;
 
 async function profileTitle(telegram, user) {
   try {
@@ -309,7 +277,7 @@ async function buildRoleResults(telegram, {
   const results = [];
   for (const row of rows.slice(0, 50)) {
     const title = await profileTitle(telegram, row);
-    const thumb = await profileThumbnail(telegram, row);
+    const thumb = await getProfileThumbnail(telegram, row);
     const percent = Number(row[percentKey]) || 80;
     const minProfits = Math.max(0, Number(row[minProfitsKey]) || 0);
     const item = {
@@ -331,6 +299,101 @@ async function buildRoleResults(telegram, {
     results.push(item);
   }
   return results;
+}
+
+function parseRoleCardSelection(ctx) {
+  const buttons = (ctx.message?.reply_markup?.inline_keyboard || []).flat();
+  for (const btn of buttons) {
+    const apply = String(btn.callback_data || "").match(/^curator:apply:(\d+)$/);
+    if (apply) return { type: "curator", targetId: apply[1] };
+  }
+
+  const pending = pendingRoleCards.get(String(ctx.from?.id || ""));
+  if (pending && Date.now() - pending.at < PENDING_TTL_MS) {
+    pendingRoleCards.delete(String(ctx.from.id));
+    return { type: pending.type, targetId: pending.targetId };
+  }
+
+  for (const btn of buttons) {
+    const url = String(btn.url || "");
+    const m = url.match(/^https?:\/\/t\.me\/([A-Za-z0-9_]+)/i);
+    if (m) return { type: "caller_username", username: m[1] };
+  }
+
+  // Фото-карточка без кнопок (нет username у прозвонщицы) — только через pending.
+  return null;
+}
+
+async function replaceViaRoleCard(ctx) {
+  // Только via-сообщения с карточкой куратора/прозвонщицы (текст или фото).
+  const hasCardMarkup = (ctx.message?.reply_markup?.inline_keyboard || []).flat().some((btn) => {
+    const data = String(btn.callback_data || "");
+    const url = String(btn.url || "");
+    return data.startsWith("curator:apply:") || /^https?:\/\/t\.me\//i.test(url);
+  });
+  const pending = pendingRoleCards.get(String(ctx.from?.id || ""));
+  const hasPending = pending && Date.now() - pending.at < PENDING_TTL_MS;
+  if (!hasCardMarkup && !hasPending) return false;
+
+  const selection = parseRoleCardSelection(ctx);
+  if (!selection) return false;
+
+  let user = null;
+  let html = "";
+  let keyboard = null;
+
+  if (selection.type === "curator") {
+    user = await getUserByTelegramId(selection.targetId);
+    if (!user?.isCurator) return false;
+    html = buildCuratorCardHtml(user);
+    keyboard = curatorCardKeyboard(user);
+  } else if (selection.type === "caller") {
+    user = await getUserByTelegramId(selection.targetId);
+    if (!user?.isCaller) return false;
+    html = buildCallerCardHtml(user);
+    keyboard = callerCardKeyboard(user);
+  } else if (selection.type === "caller_username") {
+    const callers = await listCallers();
+    user = callers.find(
+      (c) => String(c.username || "").toLowerCase() === selection.username.toLowerCase()
+    );
+    if (!user) return false;
+    html = buildCallerCardHtml(user);
+    keyboard = callerCardKeyboard(user);
+  } else {
+    return false;
+  }
+
+  const chatId = ctx.chat?.id;
+  const messageId = ctx.message?.message_id;
+  if (!chatId || !messageId) return false;
+
+  try {
+    await ctx.telegram.deleteMessage(chatId, messageId);
+  } catch (_) {
+    /* already gone */
+  }
+
+  const photoId = await getProfilePhotoFileId(ctx.telegram, user.telegramId);
+  const extra = {
+    parse_mode: "HTML",
+    reply_markup: keyboard?.reply_markup,
+  };
+
+  let sent;
+  if (photoId) {
+    sent = await ctx.telegram.sendPhoto(chatId, photoId, {
+      ...extra,
+      caption: html,
+    });
+  } else {
+    sent = await ctx.telegram.sendMessage(chatId, html, extra);
+  }
+
+  if (ctx.session && sent?.message_id) {
+    ctx.session.ui = { ...(ctx.session.ui || {}), messageId: sent.message_id };
+  }
+  return true;
 }
 
 async function buildCuratorsResults(telegram, filter = "") {
@@ -395,6 +458,32 @@ async function handlePostbotInline(ctx, query) {
 }
 
 function registerInlineHandlers(bot) {
+  bot.on("chosen_inline_result", async (ctx) => {
+    const resultId = String(ctx.chosenInlineResult?.result_id || "");
+    const match = /^(curator|caller)-(\d+)$/.exec(resultId);
+    if (!match) return;
+    pendingRoleCards.set(String(ctx.from.id), {
+      type: match[1],
+      targetId: match[2],
+      at: Date.now(),
+    });
+  });
+
+  bot.on("message", async (ctx, next) => {
+    const via = ctx.message?.via_bot;
+    if (!via || Number(via.id) !== Number(ctx.botInfo?.id)) {
+      return next();
+    }
+
+    try {
+      const replaced = await replaceViaRoleCard(ctx);
+      if (replaced) return;
+    } catch (error) {
+      logger.error("Failed to replace inline role card", error);
+    }
+    return next();
+  });
+
   bot.on("inline_query", async (ctx) => {
     try {
       const parsed = parseInlineQuery(ctx.inlineQuery.query);

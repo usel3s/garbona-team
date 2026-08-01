@@ -92,8 +92,8 @@ async function bootstrap() {
   registerMpCommand(bot);
   registerCallbackHandlers(bot);
   registerSitesHandlers(bot);
-  registerTextHandlers(bot);
   registerInlineHandlers(bot);
+  registerTextHandlers(bot);
   bot.command("recheck_steam", async (ctx) => {
     if (!isAdminTelegramId(ctx.from.id)) {
       await ctx.reply(`${pe("error")} Недостаточно прав.`, { parse_mode: "HTML" });
