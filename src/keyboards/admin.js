@@ -100,7 +100,13 @@ function adminResultKeyboard(backTo = "admin:users") {
   ]);
 }
 
-function memberActionKeyboard(memberTelegramId, isBanned = false, isCurator = false, isCaller = false) {
+function memberActionKeyboard(
+  memberTelegramId,
+  isBanned = false,
+  isCurator = false,
+  isCaller = false,
+  isModerator = false
+) {
   const rows = [
     [
       btn("Начислить профит", `admin:profit:${memberTelegramId}`, "coins"),
@@ -119,6 +125,13 @@ function memberActionKeyboard(memberTelegramId, isBanned = false, isCurator = fa
         isCaller ? "Снять прозвонщицу" : "Назначить прозвонщицей",
         `admin:caller:${memberTelegramId}`,
         isCaller ? "userBlocked" : "broadcast"
+      ),
+    ],
+    [
+      btn(
+        isModerator ? "Снять модератора" : "Добавить модератора",
+        `admin:moderator:${memberTelegramId}`,
+        isModerator ? "userBlocked" : "lock"
       ),
     ],
   ];

@@ -19,6 +19,15 @@ const userSchema = new mongoose.Schema(
     /** Telegram ID прозвонщицы, к которой привязан воркер */
     callerTelegramId: { type: String, default: "", index: true },
     isBanned: { type: Boolean, default: false },
+    isModerator: { type: Boolean, default: false, index: true },
+    warns: [
+      {
+        reason: { type: String, default: "" },
+        adminId: { type: String, default: "" },
+        adminName: { type: String, default: "" },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
     profitPercent: { type: Number, default: 80, min: 1, max: 100 },
     totalProfit: { type: Number, default: 0, min: 0 },
     bio: { type: String, default: "" },

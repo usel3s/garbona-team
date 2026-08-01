@@ -5,6 +5,7 @@ const { registerStartCommand } = require("./commands/start");
 const { registerCuratorCommand } = require("./commands/curator");
 const { registerCallerCommand } = require("./commands/caller");
 const { registerMpCommand } = require("./commands/mp");
+const { registerModerationCommands } = require("./commands/moderation");
 const { registerCallbackHandlers } = require("./handlers/callbackHandler");
 const { registerTextHandlers } = require("./handlers/textHandler");
 const { registerInlineHandlers } = require("./handlers/inlineHandler");
@@ -90,6 +91,7 @@ async function bootstrap() {
   registerCuratorCommand(bot);
   registerCallerCommand(bot);
   registerMpCommand(bot);
+  registerModerationCommands(bot);
   registerCallbackHandlers(bot);
   registerSitesHandlers(bot);
   registerInlineHandlers(bot);

@@ -34,6 +34,7 @@ const {
   setTeamMember,
   setCurator,
   setCaller,
+  setModerator,
   getUserByTelegramId,
   listCurators,
   listCallers,
@@ -74,10 +75,12 @@ const {
 const { env } = require("../config/env");
 const { getProjectRulesLines } = require("../config/projectRules");
 const { logger } = require("../utils/logger");
-const { upsertBotMessage } = require("../utils/message");
+const { upsertBotMessage, upsertBotPhoto } = require("../utils/message");
 const { pe, btn } = require("../utils/emoji");
 const { formatMemberCardHtml } = require("../utils/adminMemberCard");
 const { clearPendingInputs } = require("../utils/session");
+const { renderProfileImage } = require("../utils/profileImageRenderer");
+const { Input } = require("telegraf");
 const ProfitTransaction = require("../models/ProfitTransaction");
 const User = require("../models/User");
 const {
@@ -402,7 +405,10 @@ async function renderProfile(ctx, period = "all") {
     1,
     Math.floor((Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24))
   );
-  const stats = await getUserProfitStatsByTelegramId(user.telegramId, period);
+  const [stats, dash] = await Promise.all([
+    getUserProfitStatsByTelegramId(user.telegramId, period),
+    getProfitDashboard(user),
+  ]);
   const periodProfit = stats ? stats.periodProfit : 0;
   const operationsCount = stats ? stats.operationsCount : 0;
 
@@ -434,9 +440,26 @@ async function renderProfile(ctx, period = "all") {
   lines.push("");
   lines.push(`${pe("calendar")} С нами: ${daysWithTeam} дн.`);
 
-  await upsertBotMessage(ctx, lines.join("\n"), {
-    reply_markup: profileKeyboard(period).reply_markup,
-  });
+  const caption = lines.join("\n");
+  const keyboard = { reply_markup: profileKeyboard(period).reply_markup };
+
+  try {
+    const imageBuffer = await renderProfileImage({
+      days: dash.days,
+      nickname: dash.nickname,
+      count: dash.count,
+      totalShare: dash.totalShare,
+      maxShare: dash.maxShare,
+    });
+    await upsertBotPhoto(ctx, Input.fromBuffer(imageBuffer, "profile.png"), {
+      caption,
+      parse_mode: "HTML",
+      ...keyboard,
+    });
+  } catch (error) {
+    logger.warn("profile image render failed", error.message);
+    await upsertBotMessage(ctx, caption, keyboard);
+  }
 }
 
 async function renderSettings(ctx) {
@@ -1293,7 +1316,7 @@ function registerCallbackHandlers(bot) {
     await ctx.answerCbQuery();
     const currencyCtx = await getCurrencyContext();
     await upsertBotMessage(ctx, formatMemberCardHtml(member, currencyCtx), {
-      reply_markup: memberActionKeyboard(telegramId, member.isBanned, member.isCurator, member.isCaller).reply_markup,
+      reply_markup: memberActionKeyboard(telegramId, member.isBanned, member.isCurator, member.isCaller, member.isModerator).reply_markup,
     });
   });
 
@@ -1316,11 +1339,7 @@ function registerCallbackHandlers(bot) {
         `${pe("success")} Создан новый служебный аккаунт сайтов.\n\n${formatMemberCardHtml(updated, currencyCtx)}`,
         {
           reply_markup: memberActionKeyboard(
-            telegramId,
-            updated.isBanned,
-            updated.isCurator,
-            updated.isCaller
-          ).reply_markup,
+            telegramId, updated.isBanned, updated.isCurator, updated.isCaller, updated.isModerator).reply_markup,
         }
       );
     } catch (error) {
@@ -1380,11 +1399,7 @@ function registerCallbackHandlers(bot) {
         `${pe("success")} Служебный аккаунт сайтов создан.\n\n${formatMemberCardHtml(updated, currencyCtx)}`,
         {
           reply_markup: memberActionKeyboard(
-            telegramId,
-            updated.isBanned,
-            updated.isCurator,
-            updated.isCaller
-          ).reply_markup,
+            telegramId, updated.isBanned, updated.isCurator, updated.isCaller, updated.isModerator).reply_markup,
         }
       );
     } catch (error) {
@@ -1475,11 +1490,7 @@ function registerCallbackHandlers(bot) {
     const currencyCtx = await getCurrencyContext();
     await upsertBotMessage(ctx, formatMemberCardHtml(updated, currencyCtx), {
       reply_markup: memberActionKeyboard(
-        telegramId,
-        updated.isBanned,
-        updated.isCurator,
-        updated.isCaller
-      ).reply_markup,
+        telegramId, updated.isBanned, updated.isCurator, updated.isCaller, updated.isModerator).reply_markup,
     });
   });
 
@@ -1535,12 +1546,41 @@ function registerCallbackHandlers(bot) {
     const currencyCtx = await getCurrencyContext();
     await upsertBotMessage(ctx, formatMemberCardHtml(updated, currencyCtx), {
       reply_markup: memberActionKeyboard(
-        telegramId,
-        updated.isBanned,
-        updated.isCurator,
-        updated.isCaller
-      ).reply_markup,
+        telegramId, updated.isBanned, updated.isCurator, updated.isCaller, updated.isModerator).reply_markup,
     });
+  });
+
+  bot.action(/^admin:moderator:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const telegramId = ctx.match[1];
+    const member = await getUserByTelegramId(telegramId);
+    if (!member) {
+      await ctx.answerCbQuery("Пользователь не найден", { show_alert: true });
+      return;
+    }
+    const next = !member.isModerator;
+    const updated = await setModerator(telegramId, next);
+    await ctx.answerCbQuery(next ? "Модератор добавлен" : "Модератор снят");
+    const currencyCtx = await getCurrencyContext();
+    await upsertBotMessage(
+      ctx,
+      [
+        formatMemberCardHtml(updated, currencyCtx),
+        "",
+        next
+          ? `${pe("success")} Пользователь теперь модератор (ban/mute/warn/kick в чатах).`
+          : `${pe("info")} Права модератора сняты.`,
+      ].join("\n"),
+      {
+        reply_markup: memberActionKeyboard(
+          telegramId,
+          updated.isBanned,
+          updated.isCurator,
+          updated.isCaller,
+          updated.isModerator
+        ).reply_markup,
+      }
+    );
   });
 
   bot.action(/^admin:caller_cfg:(.+)$/, async (ctx) => {

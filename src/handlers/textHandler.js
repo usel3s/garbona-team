@@ -319,7 +319,7 @@ function registerTextHandlers(bot) {
         await upsertBotMessage(
           ctx,
           `${pe("success")} Аккаунт сайтов привязан.\n\n${formatMemberCardHtml(member, currencyCtx)}`,
-          { reply_markup: memberActionKeyboard(member.telegramId, member.isBanned, member.isCurator, member.isCaller).reply_markup }
+          { reply_markup: memberActionKeyboard(member.telegramId, member.isBanned, member.isCurator, member.isCaller, member.isModerator).reply_markup }
         );
       } catch (error) {
         await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`, {
@@ -410,11 +410,7 @@ function registerTextHandlers(bot) {
           ].join("\n"),
           {
             reply_markup: memberActionKeyboard(
-              user.telegramId,
-              user.isBanned,
-              user.isCurator,
-              user.isCaller
-            ).reply_markup,
+              user.telegramId, user.isBanned, user.isCurator, user.isCaller, user.isModerator).reply_markup,
           }
         );
       } catch (e) {
@@ -518,11 +514,7 @@ function registerTextHandlers(bot) {
         `${pe("success")} Настройки куратора сохранены.\n\n${formatMemberCardHtml(member, currencyCtx)}`,
         {
           reply_markup: memberActionKeyboard(
-            member.telegramId,
-            member.isBanned,
-            member.isCurator,
-            member.isCaller
-          ).reply_markup,
+            member.telegramId, member.isBanned, member.isCurator, member.isCaller, member.isModerator).reply_markup,
         }
       );
       return;
@@ -590,11 +582,7 @@ function registerTextHandlers(bot) {
         `${pe("success")} Настройки прозвонщицы сохранены.\n\n${formatMemberCardHtml(member, currencyCtx)}`,
         {
           reply_markup: memberActionKeyboard(
-            member.telegramId,
-            member.isBanned,
-            member.isCurator,
-            member.isCaller
-          ).reply_markup,
+            member.telegramId, member.isBanned, member.isCurator, member.isCaller, member.isModerator).reply_markup,
         }
       );
       return;
@@ -807,7 +795,7 @@ function registerTextHandlers(bot) {
       ctx.session.adminInput = null;
       const currencyCtx = await getCurrencyContext();
       await upsertBotMessage(ctx, formatMemberCardHtml(member, currencyCtx), {
-        reply_markup: memberActionKeyboard(member.telegramId, member.isBanned, member.isCurator, member.isCaller).reply_markup,
+        reply_markup: memberActionKeyboard(member.telegramId, member.isBanned, member.isCurator, member.isCaller, member.isModerator).reply_markup,
       });
       return;
     }

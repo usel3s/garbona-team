@@ -42,6 +42,7 @@ async function setTeamMember(telegramId, value) {
   if (!value) {
     update.isCurator = false;
     update.isCaller = false;
+    update.isModerator = false;
   }
   return User.findOneAndUpdate(
     { telegramId: String(telegramId) },
@@ -58,7 +59,16 @@ async function setBan(telegramId, value) {
       isTeamMember: value ? false : undefined,
       isCurator: value ? false : undefined,
       isCaller: value ? false : undefined,
+      isModerator: value ? false : undefined,
     },
+    { new: true }
+  );
+}
+
+async function setModerator(telegramId, value) {
+  return User.findOneAndUpdate(
+    { telegramId: String(telegramId) },
+    { isModerator: Boolean(value) },
     { new: true }
   );
 }
@@ -242,6 +252,7 @@ module.exports = {
   listCurators,
   setCaller,
   listCallers,
+  setModerator,
   listTeamMembers,
   getUserByTelegramId,
   getUserByPanelUsername,

@@ -8,6 +8,7 @@ function formatMemberCardHtml(member, currencyCtx) {
     `<b>Username:</b> @${member.username || "unknown"}`,
     `<b>Роль:</b> ${member.role}`,
     `<b>В команде:</b> ${member.isTeamMember ? "Да" : "Нет"}`,
+    `<b>Модератор:</b> ${member.isModerator ? "Да" : "Нет"}`,
     `<b>Куратор:</b> ${member.isCurator ? "Да" : "Нет"}`,
     member.isCurator
       ? `<b>Описание куратора:</b> ${member.curatorDescription || "—"}`
