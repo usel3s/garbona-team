@@ -11,7 +11,13 @@ const {
   steamLogSellPendingKeyboard,
 } = require("../keyboards/common");
 const { getUserByTelegramId, getUserByPanelUsername } = require("./userService");
-const { authCredentials } = require("./apiService");
+const {
+  authCredentials,
+  isServiceUnavailable,
+  isServiceUnavailableError,
+  serviceUnavailableMsLeft,
+  invalidatePanelToken,
+} = require("./apiService");
 const { sanitizeEntities } = require("./postService");
 const {
   getSteamAccounts,
@@ -21,6 +27,11 @@ const {
 } = require("./steamApiService");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+let pollInFlight = false;
+let lastCircuitLogAt = 0;
+let lastPollFailLogAt = 0;
+let consecutivePollFails = 0;
 
 function calcWorkerShare(total) {
   return Number((Math.max(0, Number(total) || 0) * Math.max(1, Math.min(100, env.steamWorkerPercent)) / 100).toFixed(2));
@@ -404,24 +415,71 @@ async function ingestAccountRows(bot, rows, fallbackTelegramId = "") {
   }
 }
 
+function logPollFail(username, error, { force = false } = {}) {
+  const now = Date.now();
+  consecutivePollFails += 1;
+  if (!force && consecutivePollFails > 3 && now - lastPollFailLogAt < 60000) return;
+  lastPollFailLogAt = now;
+  const status = error?.response?.status;
+  const detail =
+    status != null
+      ? `Request failed with status code ${status}`
+      : error?.response?.data?.message || error.message;
+  logger.warn("Steam accounts poll failed", username || "team", detail);
+}
+
 async function pollPanelUser(bot, user) {
-  if (!user?.panelUsername || !user?.panelPassword) return;
+  if (!user?.panelUsername || !user?.panelPassword) return false;
+  if (isServiceUnavailable()) return false;
   try {
     const auth = await authCredentials(user.panelUsername, user.panelPassword);
-    if (!auth?.token) return;
+    if (!auth?.token) return false;
     const payload = await getSteamAccounts(auth.token, { offset: 0, limit: 50 });
     await ingestAccountRows(bot, payload?.rows || [], user.telegramId);
+    consecutivePollFails = 0;
+    return true;
   } catch (error) {
-    logger.warn(
-      "Steam accounts poll failed",
-      user.panelUsername,
-      error?.response?.data?.message || error.message
-    );
+    if (error?.response?.status === 401) {
+      invalidatePanelToken(user.panelUsername);
+    }
+    logPollFail(user.panelUsername, error);
+    return false;
   }
 }
 
+/**
+ * One team-key request covers all worker accounts.
+ * Per-worker login polls only if the key call fails with auth/permission errors.
+ */
 async function pollOnce(bot) {
+  if (pollInFlight) return;
+  if (isServiceUnavailable()) {
+    const now = Date.now();
+    if (now - lastCircuitLogAt > 60000) {
+      lastCircuitLogAt = now;
+      logger.warn(
+        "Steam poll paused — uproject unavailable",
+        `${Math.ceil(serviceUnavailableMsLeft() / 1000)}s left`
+      );
+    }
+    return;
+  }
+
+  pollInFlight = true;
   try {
+    try {
+      const payload = await getSteamAccounts(null, { offset: 0, limit: 100 });
+      await ingestAccountRows(bot, payload?.rows || []);
+      consecutivePollFails = 0;
+      return;
+    } catch (error) {
+      if (isServiceUnavailableError(error) || isServiceUnavailable()) {
+        logPollFail("team", error, { force: true });
+        return;
+      }
+      logPollFail("team", error, { force: true });
+    }
+
     const users = await User.find({
       isTeamMember: true,
       isBanned: { $ne: true },
@@ -429,18 +487,16 @@ async function pollOnce(bot) {
       panelPassword: { $exists: true, $ne: "" },
     }).limit(100);
 
-    if (!users.length) {
-      // fallback: API key only
-      const payload = await getSteamAccounts(null, { offset: 0, limit: 50 });
-      await ingestAccountRows(bot, payload?.rows || []);
-      return;
-    }
-
+    const delay = Math.max(100, Number(env.steamPollUserDelayMs) || 400);
     for (const user of users) {
+      if (isServiceUnavailable()) break;
       await pollPanelUser(bot, user);
+      await sleep(delay);
     }
   } catch (error) {
     logger.error("Steam poll failed", error?.response?.data || error.message);
+  } finally {
+    pollInFlight = false;
   }
 }
 
@@ -500,7 +556,8 @@ async function sendFakeSteamLog(bot, { account, ownerTelegramId }) {
 
 function startSteamMonitor(bot) {
   pollOnce(bot);
-  setInterval(() => pollOnce(bot), Math.max(15000, env.steamPollIntervalMs));
+  // Min 30s — shorter intervals hammer uproject when it is already 503.
+  setInterval(() => pollOnce(bot), Math.max(30000, env.steamPollIntervalMs));
   logger.info("Steam monitor started");
 }
 

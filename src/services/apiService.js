@@ -1,7 +1,23 @@
 const axios = require("axios");
 const { env } = require("../config/env");
+const { createTtlCache } = require("../utils/ttlCache");
 
-const PANEL_TIMEOUT_MS = 30000;
+const PANEL_TIMEOUT_MS = 25000;
+const TOKEN_TTL_MS = 8 * 60 * 1000;
+const tokenCache = new Map();
+const panelDataCache = createTtlCache({ defaultTtlMs: 45000, maxEntries: 800 });
+
+const CACHE_TTL = {
+  domains: 45000,
+  links: 45000,
+  templates: 5 * 60 * 1000,
+  workers: 2 * 60 * 1000,
+  ips: 5 * 60 * 1000,
+  ns: 5 * 60 * 1000,
+};
+
+/** Global pause after uproject 502/503 — shared by poller and panel. */
+let serviceUnavailableUntil = 0;
 
 const baseClient = axios.create({
   baseURL: env.uprojectApiBase,
@@ -11,6 +27,27 @@ const baseClient = axios.create({
 
 function getAccessToken(payload) {
   return payload?.accessToken || payload?.token || payload?.data?.accessToken || payload?.data?.token || "";
+}
+
+function isTimeoutError(error) {
+  return error?.code === "ECONNABORTED" || /timeout/i.test(String(error?.message || ""));
+}
+
+function isServiceUnavailableError(error) {
+  const status = error?.response?.status;
+  return status === 502 || status === 503 || status === 504;
+}
+
+function markServiceUnavailable(ms = 120000) {
+  serviceUnavailableUntil = Math.max(serviceUnavailableUntil, Date.now() + ms);
+}
+
+function isServiceUnavailable() {
+  return Date.now() < serviceUnavailableUntil;
+}
+
+function serviceUnavailableMsLeft() {
+  return Math.max(0, serviceUnavailableUntil - Date.now());
 }
 
 /**
@@ -29,17 +66,31 @@ function panelClient(token) {
   });
 }
 
-function isTimeoutError(error) {
-  return error?.code === "ECONNABORTED" || /timeout/i.test(String(error?.message || ""));
-}
-
-async function withPanelRetry(request) {
-  try {
-    return await request();
-  } catch (error) {
-    if (!isTimeoutError(error)) throw error;
-    return request();
+async function withPanelRetry(request, { retries = 1 } = {}) {
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    if (isServiceUnavailable()) {
+      const err = new Error("Панель сайтов временно недоступна. Попробуйте чуть позже.");
+      err.response = { status: 503 };
+      throw err;
+    }
+    try {
+      return await request();
+    } catch (error) {
+      lastError = error;
+      // Don't retry 502/503/504 — uproject is overloaded; pause everyone.
+      if (isServiceUnavailableError(error)) {
+        markServiceUnavailable(120000);
+        throw error;
+      }
+      if (isTimeoutError(error) && attempt < retries) {
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      throw error;
+    }
   }
+  throw lastError;
 }
 
 async function createWorkerAccount(username, password) {
@@ -49,8 +100,14 @@ async function createWorkerAccount(username, password) {
   return response.data;
 }
 
-/** Логин как в веб-панели — без x-api-key команды. */
+/** Логин как в веб-панели — без x-api-key команды. Кэш токена снижает нагрузку. */
 async function authCredentials(username, password) {
+  const key = `${String(username || "").toLowerCase()}::${String(password || "")}`;
+  const cached = tokenCache.get(key);
+  if (cached && cached.expiresAt > Date.now() && cached.token) {
+    return { token: cached.token, data: cached.data };
+  }
+
   const response = await withPanelRetry(() =>
     axios.post(
       `${env.uprojectApiBase}/auth/credentials`,
@@ -58,14 +115,55 @@ async function authCredentials(username, password) {
       { timeout: PANEL_TIMEOUT_MS }
     )
   );
-  return { token: getAccessToken(response.data), data: response.data };
+  const token = getAccessToken(response.data);
+  if (token) {
+    tokenCache.set(key, {
+      token,
+      data: response.data,
+      expiresAt: Date.now() + TOKEN_TTL_MS,
+    });
+  }
+  return { token, data: response.data };
+}
+
+function invalidatePanelToken(username) {
+  const prefix = `${String(username || "").toLowerCase()}::`;
+  for (const key of tokenCache.keys()) {
+    if (key.startsWith(prefix)) tokenCache.delete(key);
+  }
+}
+
+function cacheScope(token) {
+  return `t:${String(token || "").slice(0, 32)}`;
+}
+
+function invalidatePanelData(token) {
+  panelDataCache.invalidatePrefix(cacheScope(token));
+}
+
+function invalidateDomainCaches(token) {
+  const s = cacheScope(token);
+  panelDataCache.invalidatePrefix(`${s}:domains`);
+  panelDataCache.invalidatePrefix(`${s}:links`);
+  panelDataCache.invalidatePrefix(`${s}:list`);
 }
 
 async function getDomains(token, offset = 0, limit = 15) {
-  return (await withPanelRetry(() => panelClient(token).get("/domains", { params: { offset, limit } }))).data;
+  const key = `${cacheScope(token)}:domains:${offset}:${limit}`;
+  return panelDataCache.getOrSet(
+    key,
+    async () =>
+      (await withPanelRetry(() => panelClient(token).get("/domains", { params: { offset, limit } }))).data,
+    CACHE_TTL.domains
+  );
 }
 async function getDomainsList(token) {
-  return (await withPanelRetry(() => panelClient(token).get("/domains/list"))).data;
+  const key = `${cacheScope(token)}:list`;
+  return panelDataCache.getOrSet(
+    key,
+    async () => (await withPanelRetry(() => panelClient(token).get("/domains/list"))).data,
+    CACHE_TTL.domains
+  );
 }
 async function isDomainAvailable(token, domain) {
   return (await withPanelRetry(() => panelClient(token).get("/domains/isAvailable", { params: { domain } }))).data;
@@ -94,25 +192,57 @@ async function checkDomainAvailability(token, domain) {
   }
 }
 async function getActualIPs(token) {
-  return (await withPanelRetry(() => panelClient(token).get("/domains/actualIPs"))).data;
+  const key = `${cacheScope(token)}:ips`;
+  return panelDataCache.getOrSet(
+    key,
+    async () => (await withPanelRetry(() => panelClient(token).get("/domains/actualIPs"))).data,
+    CACHE_TTL.ips
+  );
 }
 async function createDomain(token, payload) {
-  return (await withPanelRetry(() => panelClient(token).post("/domains", payload))).data;
+  const data = (await withPanelRetry(() => panelClient(token).post("/domains", payload))).data;
+  invalidateDomainCaches(token);
+  return data;
 }
 async function deleteDomain(token, domainId) {
-  return (await withPanelRetry(() => panelClient(token).delete(`/domains/${domainId}`))).data;
+  const data = (await withPanelRetry(() => panelClient(token).delete(`/domains/${domainId}`))).data;
+  invalidateDomainCaches(token);
+  return data;
 }
 async function getCloudflareNameservers(token) {
-  return (await withPanelRetry(() => panelClient(token).get("/cloudflare/nameservers"))).data;
+  const key = `${cacheScope(token)}:ns`;
+  return panelDataCache.getOrSet(
+    key,
+    async () => (await withPanelRetry(() => panelClient(token).get("/cloudflare/nameservers"))).data,
+    CACHE_TTL.ns
+  );
 }
 async function getSteamLinks(token, domainId, offset = 0, limit = 15) {
-  return (await withPanelRetry(() => panelClient(token).get(`/steam/links/${domainId}`, { params: { offset, limit } }))).data;
+  const key = `${cacheScope(token)}:links:${domainId}:${offset}:${limit}`;
+  return panelDataCache.getOrSet(
+    key,
+    async () =>
+      (
+        await withPanelRetry(() =>
+          panelClient(token).get(`/steam/links/${domainId}`, { params: { offset, limit } })
+        )
+      ).data,
+    CACHE_TTL.links
+  );
 }
 async function getTemplates(token, offset = 0, limit = 15) {
-  return (await withPanelRetry(() => panelClient(token).get("/templates", { params: { offset, limit } }))).data;
+  const key = `${cacheScope(token)}:templates:${offset}:${limit}`;
+  return panelDataCache.getOrSet(
+    key,
+    async () =>
+      (await withPanelRetry(() => panelClient(token).get("/templates", { params: { offset, limit } }))).data,
+    CACHE_TTL.templates
+  );
 }
 async function createSteamLink(token, payload) {
-  return (await withPanelRetry(() => panelClient(token).post("/steam/links", payload))).data;
+  const data = (await withPanelRetry(() => panelClient(token).post("/steam/links", payload))).data;
+  invalidateDomainCaches(token);
+  return data;
 }
 const VALID_WINDOW_TYPES = new Set(["FakeWindow", "AboutBlank", "CurrentWindow", "NewWindow"]);
 
@@ -130,29 +260,44 @@ async function updateSteamLink(token, domainId, linkId, patch) {
   if (body.domain != null) body.domain = Math.trunc(Number(body.domain));
   if (body.windowType != null) body.windowType = normalizeWindowType(body.windowType);
   const client = panelClient(token);
+  let data;
   try {
-    return (await withPanelRetry(() => client.patch(`/steam/links/${domain}`, body))).data;
+    data = (await withPanelRetry(() => client.patch(`/steam/links/${domain}`, body))).data;
   } catch (error) {
     if (error?.response?.status !== 404) throw error;
-    return (await withPanelRetry(() => client.patch(`/steam/links/${id}`, body))).data;
+    data = (await withPanelRetry(() => client.patch(`/steam/links/${id}`, body))).data;
   }
+  invalidateDomainCaches(token);
+  return data;
 }
 async function getTeamWorkers(token, offset = 0, limit = 100) {
-  return (await withPanelRetry(() => panelClient(token).get("/teams/workers/list", { params: { offset, limit } }))).data;
+  const key = `${cacheScope(token)}:workers:${offset}:${limit}`;
+  return panelDataCache.getOrSet(
+    key,
+    async () =>
+      (
+        await withPanelRetry(() =>
+          panelClient(token).get("/teams/workers/list", { params: { offset, limit } })
+        )
+      ).data,
+    CACHE_TTL.workers
+  );
 }
 
 function formatPanelError(error) {
-  if (isTimeoutError(error)) return "Панель сайтов не отвечает. Попробуйте ещё раз через минуту.";
-  const status = error?.response?.status;
-  if (status === 502 || status === 503 || status === 504) {
+  if (isServiceUnavailable() || isServiceUnavailableError(error)) {
     return "Панель сайтов временно недоступна. Попробуйте чуть позже.";
   }
+  if (isTimeoutError(error)) return "Панель сайтов не отвечает. Попробуйте ещё раз через минуту.";
   return error?.response?.data?.message || error?.message || "Неизвестная ошибка панели.";
 }
 
 module.exports = {
   createWorkerAccount,
   authCredentials,
+  invalidatePanelToken,
+  invalidatePanelData,
+  withPanelRetry,
   getDomains,
   getDomainsList,
   isDomainAvailable,
@@ -169,4 +314,8 @@ module.exports = {
   getTeamWorkers,
   formatPanelError,
   isTimeoutError,
+  isServiceUnavailableError,
+  isServiceUnavailable,
+  markServiceUnavailable,
+  serviceUnavailableMsLeft,
 };

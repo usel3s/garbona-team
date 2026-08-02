@@ -3,6 +3,9 @@ const { getSteamAccounts, getSteamTaskById } = require("./steamApiService");
 const { formatPanelError } = require("./apiService");
 const axios = require("axios");
 const { env } = require("../config/env");
+const { createTtlCache } = require("../utils/ttlCache");
+
+const workerViewCache = createTtlCache({ defaultTtlMs: 25000, maxEntries: 100 });
 
 function accountPrice(account) {
   const balance =
@@ -88,6 +91,10 @@ async function listWorkerLogs(user, { offset = 0, limit = 30, q = "" } = {}) {
 }
 
 async function listWorkerTasks(user) {
+  const cacheKey = `tasks:${user.telegramId || user.panelUsername || ""}`;
+  const cached = workerViewCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   try {
     const auth = await getPanelToken(user);
     const client = axios.create({
@@ -106,15 +113,17 @@ async function listWorkerTasks(user) {
       try {
         payload = (await client.get("/tasks", { params: { offset: 0, limit: 50 } })).data;
       } catch (error) {
-        return {
+        const empty = {
           tasks: [],
           message:
             "Задачи создаются из раздела «Логи»: выберите аккаунты и запустите нужную задачу.",
         };
+        workerViewCache.set(cacheKey, empty, 15000);
+        return empty;
       }
     }
     const rows = payload?.rows || payload?.data || (Array.isArray(payload) ? payload : []);
-    return {
+    const result = {
       tasks: (rows || []).map((t) => ({
         id: t.id,
         name: t.name || t.task || "Задача",
@@ -125,6 +134,8 @@ async function listWorkerTasks(user) {
       message:
         "Чтобы создать задачу, выберите аккаунты на странице логов (в uproject) и запустите задачу.",
     };
+    workerViewCache.set(cacheKey, result, 25000);
+    return result;
   } catch (error) {
     if (/Нет аккаунта сайтов|Неверный логин/i.test(String(error.message || ""))) {
       throw error;

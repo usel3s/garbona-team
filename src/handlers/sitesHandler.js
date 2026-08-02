@@ -14,6 +14,7 @@ const {
   getTeamWorkers,
   formatPanelError,
   isTimeoutError,
+  isServiceUnavailable,
 } = require("../services/apiService");
 const { ensureWorkerPanelAccount } = require("../services/panelAccountService");
 const { env } = require("../config/env");
@@ -119,10 +120,29 @@ async function showIpBindStep(ctx, flow, auth) {
  * Авторизация в панели. НИКОГДА не пересоздаёт аккаунт при timeout/сбое сети —
  * только сообщает об ошибке. Иначе у админов плодятся лишние учётки.
  */
+const panelSessionCache = new Map();
+const PANEL_SESSION_TTL_MS = 8 * 60 * 1000;
+
 async function getPanelToken(user) {
+  if (isServiceUnavailable()) {
+    throw new Error(formatPanelError({ response: { status: 503 } }));
+  }
+
   const ready = await ensureWorkerPanelAccount(user);
   if (!ready.panelUsername || !ready.panelPassword) {
     throw new Error("Нет аккаунта сайтов. Создайте или привяжите его в админке.");
+  }
+
+  const cacheKey = String(ready.panelUsername).toLowerCase();
+  const cached = panelSessionCache.get(cacheKey);
+  if (
+    cached &&
+    cached.expiresAt > Date.now() &&
+    cached.token &&
+    Number.isFinite(cached.ownerId) &&
+    cached.password === ready.panelPassword
+  ) {
+    return { token: cached.token, ownerId: cached.ownerId };
   }
 
   let auth;
@@ -157,6 +177,13 @@ async function getPanelToken(user) {
   if (!Number.isFinite(ownerId)) {
     throw new Error("Не удалось определить ID аккаунта панели.");
   }
+
+  panelSessionCache.set(cacheKey, {
+    token: auth.token,
+    ownerId,
+    password: ready.panelPassword,
+    expiresAt: Date.now() + PANEL_SESSION_TTL_MS,
+  });
   return { token: auth.token, ownerId };
 }
 

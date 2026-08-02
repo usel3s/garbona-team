@@ -36,6 +36,8 @@ const env = {
   steamLogSaleChannelId:
     process.env.STEAM_LOG_SALE_CHANNEL_ID || "-1004440736532",
   steamPollIntervalMs: Number(process.env.STEAM_POLL_INTERVAL_MS || 60000),
+  /** Delay between per-worker Steam polls when team API key poll is unavailable. */
+  steamPollUserDelayMs: Number(process.env.STEAM_POLL_USER_DELAY_MS || 400),
   steamTaskMaxWaitMs: Number(process.env.STEAM_TASK_MAX_WAIT_MS || 120000),
   steamTaskPollIntervalMs: Number(process.env.STEAM_TASK_POLL_INTERVAL_MS || 3000),
   steamWorkerPercent: Number(process.env.STEAM_WORKER_PERCENT || 80),
