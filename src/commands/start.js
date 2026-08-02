@@ -5,6 +5,7 @@ const { getApplicationSubmitGate } = require("../services/applicationService");
 const { renderPublicProfile } = require("./top");
 const { pe } = require("../utils/emoji");
 const { clearPendingInputs } = require("../utils/session");
+const { renderFeedbackMenu } = require("./feedback");
 
 async function renderHome(ctx) {
   const user = await ensureUser(ctx.from);
@@ -63,6 +64,11 @@ function registerStartCommand(bot) {
     clearPendingInputs(ctx);
 
     const payload = String(ctx.startPayload || "").trim();
+    if (/^(feedback|fb)$/i.test(payload)) {
+      await renderFeedbackMenu(ctx);
+      return;
+    }
+
     const profileMatch = /^u_(\d+)(?:_(all|24h|7d|30d))?$/.exec(payload);
     if (profileMatch) {
       const period = profileMatch[2] || "all";

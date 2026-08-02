@@ -4,6 +4,7 @@ const { btn, urlBtn, switchInlineBtn } = require("../utils/emoji");
 function applicationStartKeyboard() {
   return Markup.inlineKeyboard([
     [btn("Подать заявку", "menu:apply", "notification")],
+    [btn("Фидбек", "feedback:menu", "notification")],
   ]);
 }
 
@@ -26,6 +27,7 @@ function participantPanelKeyboard(isAdmin) {
       btn("О проекте", "menu:about", "info"),
       btn("Настройки", "menu:settings", "settings"),
     ],
+    [btn("Фидбек", "feedback:menu", "notification")],
     [
       btn("Прозвонщицы", "menu:callers", "broadcast"),
       btn("Кураторы", "menu:curators", "users"),
@@ -122,7 +124,10 @@ function settingsResultKeyboard() {
 }
 
 function homeOnlyKeyboard() {
-  return Markup.inlineKeyboard([[btn("В главное меню", "menu:home", "home")]]);
+  return Markup.inlineKeyboard([
+    [btn("Фидбек", "feedback:menu", "notification")],
+    [btn("В главное меню", "menu:home", "home")],
+  ]);
 }
 
 function payoutModerationKeyboard(requestId) {

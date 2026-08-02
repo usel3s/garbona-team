@@ -29,6 +29,13 @@ const {
   accountTotalUsd,
   kindLabel,
 } = require("../services/steamLogAdminService");
+const {
+  listUserFeedback,
+  buildUserTicketHtml,
+  typeLabel,
+  statusLabel,
+  truncate,
+} = require("../services/feedbackService");
 const { adminResultKeyboard } = require("../keyboards/admin");
 
 const MONTHS_RU = [
@@ -90,6 +97,13 @@ function parseInlineQuery(raw) {
 
   if (q === "wallet" || q === "transactions" || q.startsWith("wallet?")) {
     return { type: "wallet" };
+  }
+
+  if (q === "feedback" || q === "fb" || q.startsWith("feedback ") || q.startsWith("fb ")) {
+    return {
+      type: "feedback",
+      filter: q.replace(/^(feedback|fb)\s*/i, "").trim(),
+    };
   }
 
   if (q === "logs" || q === "log" || q.startsWith("logs ") || q.startsWith("log ")) {
@@ -236,6 +250,48 @@ async function buildWalletResults(user, currencyCtx) {
         `Сумма: ${amount}`,
         `Дата: ${when}`,
       ].join("\n"),
+    });
+  });
+}
+
+async function buildFeedbackResults(telegramId, filter = "") {
+  let rows = await listUserFeedback(telegramId, 40);
+  const needle = String(filter || "").trim().toLowerCase();
+  if (needle) {
+    rows = rows.filter((row) => {
+      const hay = [
+        row.type,
+        typeLabel(row.type),
+        row.status,
+        statusLabel(row.status),
+        row.text,
+        String(row._id),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(needle);
+    });
+  }
+
+  if (!rows.length) {
+    return [
+      articleResult({
+        id: "feedback-empty",
+        title: "Обращений пока нет",
+        description: "Напишите первое через меню фидбека",
+        messageText: "Обращений пока нет.\nОткройте /feedback и нажмите «Написать обращение».",
+      }),
+    ];
+  }
+
+  return rows.map((row, idx) => {
+    const title = `${typeLabel(row.type)} · ${statusLabel(row.status)}`;
+    const description = truncate(row.text, 80);
+    return articleResult({
+      id: `fb-${row._id || idx}`,
+      title,
+      description,
+      messageText: buildUserTicketHtml(row),
     });
   });
 }
@@ -685,6 +741,12 @@ function registerInlineHandlers(bot) {
           results = await buildWalletResults(user, currencyCtx);
         }
 
+        await ctx.answerInlineQuery(results, { cache_time: 2, is_personal: true });
+        return;
+      }
+
+      if (parsed.type === "feedback") {
+        const results = await buildFeedbackResults(ctx.from.id, parsed.filter);
         await ctx.answerInlineQuery(results, { cache_time: 2, is_personal: true });
         return;
       }

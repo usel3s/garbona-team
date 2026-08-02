@@ -60,6 +60,7 @@ const {
 } = require("../utils/fakeSteamLogInput");
 const { updateCuratorSettings } = require("../services/curatorService");
 const { updateCallerSettings } = require("../services/callerService");
+const { handleFeedbackTextInput } = require("../commands/feedback");
 
 function formatMoney(value) {
   return `$${Number(value || 0).toFixed(2)}`;
@@ -75,6 +76,10 @@ function registerTextHandlers(bot) {
     if (isBotCommandText(incoming)) {
       clearPendingInputs(ctx);
       return next();
+    }
+
+    if (await handleFeedbackTextInput(ctx, incoming)) {
+      return;
     }
 
     if (ctx.session?.profileEditBio) {

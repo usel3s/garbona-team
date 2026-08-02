@@ -16,6 +16,7 @@ function clearPendingInputs(ctx) {
   ctx.session.linkTemplates = null;
   ctx.session.referralCache = null;
   ctx.session.panelAuth = null;
+  ctx.session.feedbackDraft = null;
 }
 
 function isBotCommandText(text) {

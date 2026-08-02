@@ -2,6 +2,7 @@ const { Telegraf, session, Scenes } = require("telegraf");
 const { env, validateEnv } = require("./config/env");
 const { connectDatabase } = require("./config/db");
 const { registerStartCommand } = require("./commands/start");
+const { registerFeedbackCommand } = require("./commands/feedback");
 const { registerCuratorCommand } = require("./commands/curator");
 const { registerCallerCommand } = require("./commands/caller");
 const { registerMpCommand } = require("./commands/mp");
@@ -99,6 +100,7 @@ async function bootstrap() {
   });
 
   registerStartCommand(bot);
+  registerFeedbackCommand(bot);
   registerCuratorCommand(bot);
   registerCallerCommand(bot);
   registerMpCommand(bot);
@@ -161,6 +163,15 @@ async function bootstrap() {
     }
   } catch (error) {
     logger.warn("Failed to resolve bot username", error.message);
+  }
+
+  try {
+    await bot.telegram.setMyCommands([
+      { command: "start", description: "Главное меню" },
+      { command: "feedback", description: "Фидбек: баг, вопрос или идея" },
+    ]);
+  } catch (error) {
+    logger.warn("Failed to set bot commands", error.message);
   }
 
   const { startPanelServer } = require("./panel/httpServer");
