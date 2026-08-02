@@ -58,6 +58,7 @@ function adminCommsKeyboard() {
       btn("Postbot", "admin:postbot", "bot"),
     ],
     [btn("Тред мануалов", "admin:manuals_thread", "file")],
+    [btn("Анонс бота", "admin:launch_announce", "celebrate")],
     [btn("Назад", "admin:panel", "home")],
   ]);
 }

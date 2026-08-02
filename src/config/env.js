@@ -15,6 +15,12 @@ const env = {
   aboutManualsChatId: process.env.ABOUT_MANUALS_CHAT_ID || "-1003731342806",
   aboutInfoChannelUrl:
     process.env.ABOUT_INFO_CHANNEL_URL || "https://t.me/garbona",
+  /** Канал анонсов / info (первый пост о боте). */
+  launchAnnounceChatId:
+    process.env.LAUNCH_ANNOUNCE_CHAT_ID ||
+    process.env.ABOUT_INFO_CHAT_ID ||
+    "-1003600501278",
+  aboutInfoChatId: process.env.ABOUT_INFO_CHAT_ID || "-1003600501278",
   /** Публичная ссылка на GitBook / базу мануалов (кнопка в треде). */
   manualsDocsUrl: process.env.MANUALS_DOCS_URL || "",
   feedbackChannelId: process.env.FEEDBACK_CHANNEL_ID || "",

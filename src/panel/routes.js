@@ -66,6 +66,7 @@ const {
 } = require("../services/withdrawalService");
 const { getBroadcastRecipients, runBroadcast } = require("../services/broadcastService");
 const { seedManualsThread } = require("../services/manualsThreadService");
+const { publishLaunchAnnounce } = require("../services/launchAnnounceService");
 const { fetchSteamAccountById, listSteamAccountsForAdmin } = require("../services/steamLogAdminService");
 const { sendFakeSteamProfit, sendFakeSteamLog } = require("../services/steamMonitorService");
 const { resolveFakeProfitSevenSkinQueries } = require("../services/steamMarketLookup");
@@ -680,6 +681,15 @@ function createPanelRouter(bot) {
   router.post("/admin/comms/manuals-thread", requireAdmin, async (_req, res) => {
     try {
       const result = await seedManualsThread(bot.telegram);
+      res.json({ ok: true, result });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.post("/admin/comms/launch-announce", requireAdmin, async (_req, res) => {
+    try {
+      const result = await publishLaunchAnnounce(bot.telegram);
       res.json({ ok: true, result });
     } catch (error) {
       res.status(400).json({ error: error.message });

@@ -99,6 +99,10 @@ const {
   formatDisplayAmount,
 } = require("../services/currencyService");
 const { seedManualsThread, manualsChatId } = require("../services/manualsThreadService");
+const {
+  publishLaunchAnnounce,
+  launchAnnounceChatId,
+} = require("../services/launchAnnounceService");
 const { authCredentials, getTeamWorkers, formatPanelError } = require("../services/apiService");
 const {
   ensureWorkerPanelAccount,
@@ -1179,6 +1183,44 @@ function registerCallbackHandlers(bot) {
           "",
           `Чат мануалов: <code>${manualsChatId()}</code>`,
           "Добавь бота в этот форум-чат админом с правом управлять топиками и писать сообщения.",
+        ].join("\n"),
+        { reply_markup: adminResultKeyboard("admin:comms").reply_markup }
+      );
+    }
+  });
+
+  bot.action("admin:launch_announce", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    try {
+      const result = await publishLaunchAnnounce(ctx.telegram);
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("success")} <b>Анонс бота опубликован</b>`,
+          "",
+          `Канал: <code>${result.chatId}</code>`,
+          `Message ID: <code>${result.messageId}</code>`,
+          result.botUrl ? `Бот: ${result.botUrl}` : "",
+          result.docsUrl ? `Мануалы: ${result.docsUrl}` : "",
+          result.pinned ? "Сообщение закреплено." : "Закрепить не удалось (проверь права).",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        { reply_markup: adminResultKeyboard("admin:comms").reply_markup }
+      );
+    } catch (e) {
+      const desc = e?.response?.description || e.message || "ошибка";
+      logger.warn("admin:launch_announce failed", desc);
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("error")} <b>Не удалось опубликовать анонс</b>`,
+          "",
+          String(desc),
+          "",
+          `Канал: <code>${launchAnnounceChatId()}</code>`,
+          "Добавь бота в канал админом с правом писать и закреплять сообщения.",
         ].join("\n"),
         { reply_markup: adminResultKeyboard("admin:comms").reply_markup }
       );
