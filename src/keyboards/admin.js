@@ -11,11 +11,24 @@ function adminPanelKeyboard() {
     [btn("Статистика", "admin:stats", "statistics")],
     [
       btn("Экономика", "admin:economy", "coins"),
-      btn("Логи Steam", "admin:logs", "package"),
+      btn("Шаблоны", "admin:templates", "file"),
     ],
-    [btn("Логи бота", "admin:botlogs", "file")],
+    [
+      btn("Логи Steam", "admin:logs", "package"),
+      btn("Логи бота", "admin:botlogs", "file"),
+    ],
     [btn("В меню", "menu:home", "home")],
   ]);
+}
+
+function adminTemplatesKeyboard(templates = []) {
+  const rows = [[btn("Включить по ID", "admin:templates:enable", "edit")]];
+  for (const template of templates.slice(0, 20)) {
+    const label = `Выкл · #${template.id} ${template.name || ""}`.trim().slice(0, 64);
+    rows.push([btn(label, `admin:templates:disable:${template.id}`, "delete")]);
+  }
+  rows.push([btn("Назад", "admin:panel", "home")]);
+  return Markup.inlineKeyboard(rows);
 }
 
 function adminLogsKeyboard() {
@@ -214,6 +227,7 @@ module.exports = {
   adminStatsKeyboard,
   adminLogsKeyboard,
   adminBotLogsKeyboard,
+  adminTemplatesKeyboard,
   adminCancelKeyboard,
   adminBackKeyboard,
   adminResultKeyboard,

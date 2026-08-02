@@ -21,6 +21,7 @@ const {
   adminStatsKeyboard,
   adminLogsKeyboard,
   adminBotLogsKeyboard,
+  adminTemplatesKeyboard,
   memberActionKeyboard,
   memberPanelAccountKeyboard,
   memberPanelRecreateConfirmKeyboard,
@@ -93,7 +94,12 @@ const {
   getDisplayCurrency,
   setDisplayCurrency,
   getUsdRubRate,
+  getVisibleTemplates,
 } = require("../services/settingsService");
+const {
+  enableTemplateById,
+  disableTemplateById,
+} = require("../services/adminSitesService");
 const {
   getCurrencyContext,
   formatDisplayAmount,
@@ -215,6 +221,40 @@ async function renderAdminEconomy(ctx) {
     ].join("\n"),
     { reply_markup: adminEconomyKeyboard(globalPercent, currency).reply_markup }
   );
+}
+
+function escapeAdminHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+async function renderAdminTemplates(ctx) {
+  const templates = await getVisibleTemplates();
+  const lines = [
+    `${pe("file")} <b>Шаблоны</b>`,
+    "",
+    "Только включённые ID видны в боте и при создании ссылок.",
+    "",
+  ];
+  if (!templates.length) {
+    lines.push("<i>Список пуст — шаблоны скрыты.</i>");
+  } else {
+    lines.push(`Включено: <b>${templates.length}</b>`);
+    lines.push("");
+    for (const template of templates.slice(0, 30)) {
+      lines.push(
+        `• <code>${template.id}</code> — ${escapeAdminHtml(template.name || `Template #${template.id}`)}`
+      );
+    }
+    if (templates.length > 30) {
+      lines.push("", `<i>…и ещё ${templates.length - 30}</i>`);
+    }
+  }
+  await upsertBotMessage(ctx, lines.join("\n"), {
+    reply_markup: adminTemplatesKeyboard(templates).reply_markup,
+  });
 }
 
 async function renderAdminCurrency(ctx) {
@@ -986,6 +1026,41 @@ function registerCallbackHandlers(bot) {
     clearPendingInputs(ctx);
     await ctx.answerCbQuery();
     await renderAdminEconomy(ctx);
+  });
+
+  bot.action("admin:templates", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    clearPendingInputs(ctx);
+    await ctx.answerCbQuery();
+    await renderAdminTemplates(ctx);
+  });
+
+  bot.action("admin:templates:enable", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    ctx.session.adminInput = { type: "template_enable" };
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("edit")} <b>Включить шаблон</b>`,
+        "",
+        "Введите <b>ID шаблона</b> (только цифры).",
+        "Пример: <code>785</code>",
+      ].join("\n"),
+      { reply_markup: adminCancelKeyboard("admin:templates").reply_markup }
+    );
+  });
+
+  bot.action(/^admin:templates:disable:(\d+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const templateId = Number(ctx.match[1]);
+    try {
+      await disableTemplateById(null, templateId);
+      await ctx.answerCbQuery(`#${templateId} выключен`);
+      await renderAdminTemplates(ctx);
+    } catch (error) {
+      await ctx.answerCbQuery(error.message || "Ошибка", { show_alert: true });
+    }
   });
 
   bot.action("admin:logs", async (ctx) => {

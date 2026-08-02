@@ -24,6 +24,14 @@ function startPanelServer(bot) {
     res.redirect("/app/index.html");
   });
 
+  // HTML/JS панели — без долгого кэша, чтобы админка сразу подхватывала обновления UI.
+  app.use((req, res, next) => {
+    if (/\.(?:html?|js)$/i.test(req.path) || req.path === "/" || req.path === "") {
+      res.setHeader("Cache-Control", "no-store");
+    }
+    next();
+  });
+
   app.use(express.static(panelRoot, { index: false, extensions: ["html"] }));
 
   app.get("/", (_req, res) => {

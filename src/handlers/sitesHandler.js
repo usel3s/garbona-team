@@ -634,7 +634,7 @@ function registerSitesHandlers(bot) {
       ctx.session.linkTemplates = await getVisibleTemplates();
       const emptyHint = ctx.session.linkTemplates.length
         ? "Выберите шаблон или найдите по ID."
-        : "Нет доступных шаблонов. Можно искать по ID, если админ включил его.";
+        : "Нет доступных шаблонов. Можно искать по ID.";
       await upsertBotMessage(ctx, `${pe("file")} ${emptyHint}`, {
         reply_markup: templatesKeyboard(ctx.session.linkTemplates).reply_markup,
       });
@@ -833,7 +833,7 @@ function registerSitesHandlers(bot) {
       if (ctx.session) ctx.session.linkTemplates = templates;
       const hint = templates.length
         ? "Выберите шаблон для реферальной ссылки или найдите по ID."
-        : "Нет доступных шаблонов. Можно искать по ID, если админ включил его.";
+        : "Нет доступных шаблонов. Можно искать по ID.";
       await upsertBotMessage(ctx, `${pe("file")} <b>Шаблоны</b>\n\n${hint}`, {
         reply_markup: referralTemplatesKeyboard(domainId, templates).reply_markup,
       });
@@ -970,7 +970,7 @@ function registerSitesHandlers(bot) {
       if (!(await isTemplateVisible(templateId))) {
         await upsertBotMessage(
           ctx,
-          `${pe("error")} Шаблон <code>${templateId}</code> недоступен. Админ должен включить его в панели.`,
+          `${pe("error")} Шаблон <code>${templateId}</code> недоступен.`,
           { reply_markup: templatesKeyboard(await getVisibleTemplates()).reply_markup }
         );
         return;
@@ -1007,7 +1007,7 @@ function registerSitesHandlers(bot) {
       if (!(await isTemplateVisible(templateId))) {
         await upsertBotMessage(
           ctx,
-          `${pe("error")} Шаблон <code>${templateId}</code> недоступен. Админ должен включить его в панели.`,
+          `${pe("error")} Шаблон <code>${templateId}</code> недоступен.`,
           { reply_markup: referralTemplatesKeyboard(domainId, await getVisibleTemplates()).reply_markup }
         );
         return;

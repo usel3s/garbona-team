@@ -12,6 +12,7 @@
     apps: "Заявки",
     economy: "Экономика",
     sites: "Сайты",
+    templates: "Шаблоны",
     payouts: "Выплаты",
     steam: "Логи Steam",
     botlogs: "Логи бота",
@@ -95,6 +96,7 @@
       else if (viewId === "stats") await renderStats();
       else if (viewId === "economy") await renderEconomy();
       else if (viewId === "sites") await renderSites();
+      else if (viewId === "templates") await renderTemplates();
       else if (viewId === "apps") await renderApps();
       else if (viewId === "comms") await renderComms();
       else if (viewId === "payouts") await renderPayouts();
@@ -1072,91 +1074,117 @@ MAC-10 | Neon Rider (Factory New)</textarea>
     }
 
     async function renderTemplatesVisibility() {
-      const data = await PanelAPI.get("/admin/sites/templates/visibility");
-      const templates = data.templates || [];
-      sub.textContent = `Видимые шаблоны · ${templates.length}`;
-      body.innerHTML = `
-        <div class="panel-card">
-          <div class="panel-card-body" style="padding-top:16px">
-            <div class="settings-row-title" style="margin-bottom:4px">Доступные шаблоны</div>
-            <div class="muted" style="margin-bottom:12px">
-              Только включённые ID видны в боте и при создании ссылок${
-                templates.length ? "." : ". Сейчас список пуст — шаблоны скрыты."
-              }
-            </div>
-            <div class="search-row">
-              <input class="search-input" id="siteTemplateIdInput" type="number" min="1" step="1" placeholder="ID шаблона, например 785" />
-              <button type="button" class="btn-primary" id="siteTemplateEnable">Включить</button>
-            </div>
-            <div class="table-wrap" style="margin-top:8px">
-              <table class="data">
-                <thead><tr><th>ID</th><th>Название</th><th>Превью</th><th></th></tr></thead>
-                <tbody id="siteTemplatesBody"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      `;
-      const tbody = document.getElementById("siteTemplatesBody");
-      templates.forEach((t) => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td><code>${t.id}</code></td>
-          <td>${escapeHtml(t.name || `Template #${t.id}`)}</td>
-          <td class="muted">${
-            t.preview
-              ? `<a href="${escapeHtml(t.preview)}" target="_blank" rel="noopener">открыть</a>`
-              : "—"
-          }</td>
-          <td></td>
-        `;
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "btn-ghost btn-danger";
-        btn.textContent = "Выключить";
-        btn.addEventListener("click", async () => {
-          try {
-            await PanelAPI.del(`/admin/sites/templates/visibility/${t.id}`);
-            toast(`Шаблон #${t.id} выключен`);
-            await renderTemplatesVisibility();
-          } catch (e) {
-            toast(e.message, "error");
-          }
-        });
-        tr.lastElementChild.appendChild(btn);
-        tbody.appendChild(tr);
-      });
-      if (!templates.length) {
-        tbody.innerHTML = `<tr><td colspan="4" class="muted">Нет включённых шаблонов — пользователи их не видят</td></tr>`;
-      }
-
-      const enable = async () => {
-        const id = document.getElementById("siteTemplateIdInput").value.trim();
-        if (!id) {
-          toast("Укажите ID шаблона", "error");
-          return;
-        }
-        try {
-          const result = await PanelAPI.post("/admin/sites/templates/visibility", { id });
-          const name = result.template?.name || `#${id}`;
-          toast(
-            result.resolved === false
-              ? `ID ${id} включён (название не найдено в каталоге)`
-              : `Включён: ${name}`
-          );
-          document.getElementById("siteTemplateIdInput").value = "";
-          await renderTemplatesVisibility();
-        } catch (e) {
-          toast(e.message, "error");
-        }
-      };
-      document.getElementById("siteTemplateEnable").addEventListener("click", enable);
-      document.getElementById("siteTemplateIdInput").addEventListener("keydown", (e) => {
-        if (e.key === "Enter") enable();
+      await mountTemplatesVisibility(body, {
+        onMeta: (text) => {
+          sub.textContent = text;
+        },
       });
     }
 
     await load();
+  }
+
+  async function renderTemplates() {
+    main.innerHTML = `
+      <div class="greeting">
+        <div>
+          <h1 class="greeting-title">Шаблоны</h1>
+          <p class="greeting-sub" id="templatesSub">Какие шаблоны видны в боте и панелях</p>
+        </div>
+      </div>
+      <div id="templatesBody"></div>
+    `;
+    await mountTemplatesVisibility(document.getElementById("templatesBody"), {
+      onMeta: (text) => {
+        const el = document.getElementById("templatesSub");
+        if (el) el.textContent = text;
+      },
+    });
+  }
+
+  async function mountTemplatesVisibility(container, { onMeta } = {}) {
+    const data = await PanelAPI.get("/admin/sites/templates/visibility");
+    const templates = data.templates || [];
+    if (typeof onMeta === "function") onMeta(`Видимые шаблоны · ${templates.length}`);
+    container.innerHTML = `
+      <div class="panel-card">
+        <div class="panel-card-body" style="padding-top:16px">
+          <div class="settings-row-title" style="margin-bottom:4px">Доступные шаблоны</div>
+          <div class="muted" style="margin-bottom:12px">
+            Только включённые ID видны в боте и при создании ссылок${
+              templates.length ? "." : ". Сейчас список пуст — шаблоны скрыты."
+            }
+          </div>
+          <div class="search-row">
+            <input class="search-input" id="siteTemplateIdInput" type="number" min="1" step="1" placeholder="ID шаблона, например 785" />
+            <button type="button" class="btn-primary" id="siteTemplateEnable">Включить</button>
+          </div>
+          <div class="table-wrap" style="margin-top:8px">
+            <table class="data">
+              <thead><tr><th>ID</th><th>Название</th><th>Превью</th><th></th></tr></thead>
+              <tbody id="siteTemplatesBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+    const tbody = document.getElementById("siteTemplatesBody");
+    templates.forEach((t) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><code>${t.id}</code></td>
+        <td>${escapeHtml(t.name || `Template #${t.id}`)}</td>
+        <td class="muted">${
+          t.preview
+            ? `<a href="${escapeHtml(t.preview)}" target="_blank" rel="noopener">открыть</a>`
+            : "—"
+        }</td>
+        <td></td>
+      `;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn-ghost btn-danger";
+      btn.textContent = "Выключить";
+      btn.addEventListener("click", async () => {
+        try {
+          await PanelAPI.del(`/admin/sites/templates/visibility/${t.id}`);
+          toast(`Шаблон #${t.id} выключен`);
+          await mountTemplatesVisibility(container, { onMeta });
+        } catch (e) {
+          toast(e.message, "error");
+        }
+      });
+      tr.lastElementChild.appendChild(btn);
+      tbody.appendChild(tr);
+    });
+    if (!templates.length) {
+      tbody.innerHTML = `<tr><td colspan="4" class="muted">Нет включённых шаблонов — пользователи их не видят</td></tr>`;
+    }
+
+    const enable = async () => {
+      const id = document.getElementById("siteTemplateIdInput").value.trim();
+      if (!id) {
+        toast("Укажите ID шаблона", "error");
+        return;
+      }
+      try {
+        const result = await PanelAPI.post("/admin/sites/templates/visibility", { id });
+        const name = result.template?.name || `#${id}`;
+        toast(
+          result.resolved === false
+            ? `ID ${id} включён (название не найдено в каталоге)`
+            : `Включён: ${name}`
+        );
+        document.getElementById("siteTemplateIdInput").value = "";
+        await mountTemplatesVisibility(container, { onMeta });
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    };
+    document.getElementById("siteTemplateEnable").addEventListener("click", enable);
+    document.getElementById("siteTemplateIdInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") enable();
+    });
   }
 
   async function renderSteam() {

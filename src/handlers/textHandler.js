@@ -8,7 +8,12 @@ const {
   addWalletBalanceUsd,
 } = require("../services/userService");
 const { addProfitToUserByTelegramId } = require("../services/profitService");
-const { setGlobalWorkerPercent, setUsdRubRate } = require("../services/settingsService");
+const {
+  setGlobalWorkerPercent,
+  setUsdRubRate,
+  getVisibleTemplates,
+} = require("../services/settingsService");
+const { enableTemplateById } = require("../services/adminSitesService");
 const { addFormQuestion, getForm } = require("../services/formService");
 const { adminQuestionsKeyboard } = require("../keyboards/application");
 const { env } = require("../config/env");
@@ -40,6 +45,7 @@ const {
   adminBackKeyboard,
   adminCancelKeyboard,
   adminResultKeyboard,
+  adminTemplatesKeyboard,
   memberActionKeyboard,
 } = require("../keyboards/admin");
 const {
@@ -300,6 +306,8 @@ function registerTextHandlers(bot) {
               adminInput?.type === "fake_log_owner" ||
               adminInput?.type === "fake_log_fields"
             ? "admin:economy"
+            : adminInput?.type === "template_enable"
+              ? "admin:templates"
             : adminInput?.type === "search_log"
               ? "admin:logs"
             : adminInput?.type === "curator_desc" ||
@@ -804,6 +812,59 @@ function registerTextHandlers(bot) {
       } catch (e) {
         await upsertBotMessage(ctx, `${pe("error")} ${e.message}`, {
           reply_markup: adminCancelKeyboard("admin:economy").reply_markup,
+        });
+      }
+      return;
+    }
+
+    if (adminInput?.type === "template_enable") {
+      const templateId = Math.trunc(Number(String(text).replace(/\s/g, "")));
+      if (!Number.isFinite(templateId) || templateId < 1) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Введите корректный ID шаблона (число больше 0).`,
+          { reply_markup: adminCancelKeyboard("admin:templates").reply_markup }
+        );
+        return;
+      }
+      try {
+        const admin = await ensureUser(ctx.from);
+        const result = await enableTemplateById(admin, templateId);
+        ctx.session.adminInput = null;
+        const templates = result.templates || (await getVisibleTemplates());
+        const esc = (v) =>
+          String(v || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+        const name = result.template?.name || `Template #${templateId}`;
+        const lines = [
+          `${pe("success")} Включён: <b>${esc(name)}</b> <code>#${templateId}</code>`,
+        ];
+        if (result.resolved === false) {
+          lines.push("<i>Название в каталоге не найдено — сохранён ID.</i>");
+        }
+        lines.push(
+          "",
+          `${pe("file")} <b>Шаблоны</b>`,
+          "",
+          "Только включённые ID видны в боте и при создании ссылок.",
+          ""
+        );
+        if (!templates.length) {
+          lines.push("<i>Список пуст — шаблоны скрыты.</i>");
+        } else {
+          lines.push(`Включено: <b>${templates.length}</b>`, "");
+          for (const template of templates.slice(0, 30)) {
+            lines.push(`• <code>${template.id}</code> — ${esc(template.name || `Template #${template.id}`)}`);
+          }
+        }
+        await upsertBotMessage(ctx, lines.join("\n"), {
+          reply_markup: adminTemplatesKeyboard(templates).reply_markup,
+        });
+      } catch (e) {
+        await upsertBotMessage(ctx, `${pe("error")} ${e.message}`, {
+          reply_markup: adminCancelKeyboard("admin:templates").reply_markup,
         });
       }
       return;
