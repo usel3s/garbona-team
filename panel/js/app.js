@@ -1117,6 +1117,7 @@ MAC-10 | Neon Rider (Factory New)</textarea>
           </div>
           <div class="search-row">
             <input class="search-input" id="siteTemplateIdInput" type="number" min="1" step="1" placeholder="ID шаблона, например 785" />
+            <input class="search-input" id="siteTemplateNameInput" maxlength="80" placeholder="Своё название (необязательно)" />
             <button type="button" class="btn-primary" id="siteTemplateEnable">Включить</button>
           </div>
           <div class="table-wrap" style="margin-top:8px">
@@ -1133,7 +1134,7 @@ MAC-10 | Neon Rider (Factory New)</textarea>
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td><code>${t.id}</code></td>
-        <td>${escapeHtml(t.name || `Template #${t.id}`)}</td>
+        <td></td>
         <td class="muted">${
           t.preview
             ? `<a href="${escapeHtml(t.preview)}" target="_blank" rel="noopener">открыть</a>`
@@ -1141,6 +1142,48 @@ MAC-10 | Neon Rider (Factory New)</textarea>
         }</td>
         <td></td>
       `;
+      const nameCell = tr.children[1];
+      const nameInput = document.createElement("input");
+      nameInput.className = "search-input";
+      nameInput.style.maxWidth = "220px";
+      nameInput.maxLength = 80;
+      nameInput.value = t.name || `Template #${t.id}`;
+      nameInput.addEventListener("keydown", async (e) => {
+        if (e.key !== "Enter") return;
+        const name = nameInput.value.trim();
+        if (!name) {
+          toast("Укажите название", "error");
+          return;
+        }
+        try {
+          await PanelAPI.patch(`/admin/sites/templates/visibility/${t.id}`, { name });
+          toast(`Название #${t.id} обновлено`);
+          await mountTemplatesVisibility(container, { onMeta });
+        } catch (err) {
+          toast(err.message, "error");
+        }
+      });
+      nameCell.appendChild(nameInput);
+
+      const actions = tr.lastElementChild;
+      const saveBtn = document.createElement("button");
+      saveBtn.type = "button";
+      saveBtn.className = "btn-ghost";
+      saveBtn.textContent = "Сохранить";
+      saveBtn.addEventListener("click", async () => {
+        const name = nameInput.value.trim();
+        if (!name) {
+          toast("Укажите название", "error");
+          return;
+        }
+        try {
+          await PanelAPI.patch(`/admin/sites/templates/visibility/${t.id}`, { name });
+          toast(`Название #${t.id} обновлено`);
+          await mountTemplatesVisibility(container, { onMeta });
+        } catch (err) {
+          toast(err.message, "error");
+        }
+      });
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "btn-ghost btn-danger";
@@ -1154,7 +1197,8 @@ MAC-10 | Neon Rider (Factory New)</textarea>
           toast(e.message, "error");
         }
       });
-      tr.lastElementChild.appendChild(btn);
+      actions.appendChild(saveBtn);
+      actions.appendChild(btn);
       tbody.appendChild(tr);
     });
     if (!templates.length) {
@@ -1163,19 +1207,17 @@ MAC-10 | Neon Rider (Factory New)</textarea>
 
     const enable = async () => {
       const id = document.getElementById("siteTemplateIdInput").value.trim();
+      const name = document.getElementById("siteTemplateNameInput").value.trim();
       if (!id) {
         toast("Укажите ID шаблона", "error");
         return;
       }
       try {
-        const result = await PanelAPI.post("/admin/sites/templates/visibility", { id });
-        const name = result.template?.name || `#${id}`;
-        toast(
-          result.resolved === false
-            ? `ID ${id} включён (название не найдено в каталоге)`
-            : `Включён: ${name}`
-        );
+        const result = await PanelAPI.post("/admin/sites/templates/visibility", { id, name });
+        const savedName = result.template?.name || `#${id}`;
+        toast(`Включён: ${savedName}`);
         document.getElementById("siteTemplateIdInput").value = "";
+        document.getElementById("siteTemplateNameInput").value = "";
         await mountTemplatesVisibility(container, { onMeta });
       } catch (e) {
         toast(e.message, "error");
@@ -1183,6 +1225,9 @@ MAC-10 | Neon Rider (Factory New)</textarea>
     };
     document.getElementById("siteTemplateEnable").addEventListener("click", enable);
     document.getElementById("siteTemplateIdInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") enable();
+    });
+    document.getElementById("siteTemplateNameInput").addEventListener("keydown", (e) => {
       if (e.key === "Enter") enable();
     });
   }

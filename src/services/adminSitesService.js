@@ -20,6 +20,7 @@ const {
   getVisibleTemplates,
   addVisibleTemplate,
   removeVisibleTemplate,
+  renameVisibleTemplate,
   isTemplateVisible,
   normalizeTemplateId,
 } = require("./settingsService");
@@ -198,13 +199,14 @@ async function listTemplateVisibility(_adminUser) {
   };
 }
 
-async function enableTemplateById(adminUser, templateId) {
+async function enableTemplateById(adminUser, templateId, { name } = {}) {
   const id = normalizeTemplateId(templateId);
   if (!id) {
     const err = new Error("Укажите корректный ID шаблона");
     err.status = 400;
     throw err;
   }
+  const customName = String(name || "").trim().slice(0, 80);
   let found = null;
   try {
     found = await withAdminPanel(adminUser, async ({ token }) => findTemplateById(token, id));
@@ -213,14 +215,30 @@ async function enableTemplateById(adminUser, templateId) {
   }
   const templates = await addVisibleTemplate({
     id,
-    name: found?.name || `Template #${id}`,
+    name: customName || found?.name || `Template #${id}`,
     preview: found?.preview || "",
   });
   return {
     templates,
     template: templates.find((row) => row.id === id),
     resolved: Boolean(found),
+    customName: Boolean(customName),
   };
+}
+
+async function renameTemplateById(_adminUser, templateId, name) {
+  try {
+    const templates = await renameVisibleTemplate(templateId, name);
+    const id = normalizeTemplateId(templateId);
+    return {
+      templates,
+      template: templates.find((row) => row.id === id),
+    };
+  } catch (error) {
+    const err = new Error(error.message || "Не удалось переименовать");
+    err.status = 400;
+    throw err;
+  }
 }
 
 async function disableTemplateById(_adminUser, templateId) {
@@ -297,6 +315,7 @@ module.exports = {
   listTemplates,
   listTemplateVisibility,
   enableTemplateById,
+  renameTemplateById,
   disableTemplateById,
   createLink,
   listWorkers,

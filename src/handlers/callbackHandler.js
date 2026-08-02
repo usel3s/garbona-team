@@ -21,7 +21,6 @@ const {
   adminStatsKeyboard,
   adminLogsKeyboard,
   adminBotLogsKeyboard,
-  adminTemplatesKeyboard,
   memberActionKeyboard,
   memberPanelAccountKeyboard,
   memberPanelRecreateConfirmKeyboard,
@@ -94,12 +93,9 @@ const {
   getDisplayCurrency,
   setDisplayCurrency,
   getUsdRubRate,
-  getVisibleTemplates,
 } = require("../services/settingsService");
-const {
-  enableTemplateById,
-  disableTemplateById,
-} = require("../services/adminSitesService");
+const { disableTemplateById } = require("../services/adminSitesService");
+const { buildAdminTemplatesView } = require("../utils/adminTemplatesUi");
 const {
   getCurrencyContext,
   formatDisplayAmount,
@@ -223,38 +219,9 @@ async function renderAdminEconomy(ctx) {
   );
 }
 
-function escapeAdminHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
 async function renderAdminTemplates(ctx) {
-  const templates = await getVisibleTemplates();
-  const lines = [
-    `${pe("file")} <b>Шаблоны</b>`,
-    "",
-    "Только включённые ID видны в боте и при создании ссылок.",
-    "",
-  ];
-  if (!templates.length) {
-    lines.push("<i>Список пуст — шаблоны скрыты.</i>");
-  } else {
-    lines.push(`Включено: <b>${templates.length}</b>`);
-    lines.push("");
-    for (const template of templates.slice(0, 30)) {
-      lines.push(
-        `• <code>${template.id}</code> — ${escapeAdminHtml(template.name || `Template #${template.id}`)}`
-      );
-    }
-    if (templates.length > 30) {
-      lines.push("", `<i>…и ещё ${templates.length - 30}</i>`);
-    }
-  }
-  await upsertBotMessage(ctx, lines.join("\n"), {
-    reply_markup: adminTemplatesKeyboard(templates).reply_markup,
-  });
+  const view = await buildAdminTemplatesView();
+  await upsertBotMessage(ctx, view.text, { reply_markup: view.reply_markup });
 }
 
 async function renderAdminCurrency(ctx) {
@@ -1046,6 +1013,25 @@ function registerCallbackHandlers(bot) {
         "",
         "Введите <b>ID шаблона</b> (только цифры).",
         "Пример: <code>785</code>",
+        "",
+        "После ID можно задать своё название.",
+      ].join("\n"),
+      { reply_markup: adminCancelKeyboard("admin:templates").reply_markup }
+    );
+  });
+
+  bot.action(/^admin:templates:rename:(\d+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const templateId = Number(ctx.match[1]);
+    ctx.session.adminInput = { type: "template_rename", templateId };
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("edit")} <b>Название шаблона</b>`,
+        "",
+        `ID: <code>${templateId}</code>`,
+        "Введите новое название (как будет видно воркерам).",
       ].join("\n"),
       { reply_markup: adminCancelKeyboard("admin:templates").reply_markup }
     );

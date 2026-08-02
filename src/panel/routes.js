@@ -56,6 +56,7 @@ const {
   listTemplates,
   listTemplateVisibility,
   enableTemplateById,
+  renameTemplateById,
   disableTemplateById,
   createLink,
   listWorkers,
@@ -815,7 +816,19 @@ function createPanelRouter(bot) {
 
   router.post("/admin/sites/templates/visibility", requireAdmin, async (req, res) => {
     try {
-      res.json(await enableTemplateById(req.admin, req.body?.id ?? req.body?.templateId));
+      res.json(
+        await enableTemplateById(req.admin, req.body?.id ?? req.body?.templateId, {
+          name: req.body?.name,
+        })
+      );
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.patch("/admin/sites/templates/visibility/:id", requireAdmin, async (req, res) => {
+    try {
+      res.json(await renameTemplateById(req.admin, req.params.id, req.body?.name));
     } catch (error) {
       res.status(error.status || 400).json({ error: error.message });
     }

@@ -23,9 +23,11 @@ function adminPanelKeyboard() {
 
 function adminTemplatesKeyboard(templates = []) {
   const rows = [[btn("Включить по ID", "admin:templates:enable", "edit")]];
-  for (const template of templates.slice(0, 20)) {
-    const label = `Выкл · #${template.id} ${template.name || ""}`.trim().slice(0, 64);
-    rows.push([btn(label, `admin:templates:disable:${template.id}`, "delete")]);
+  for (const template of templates.slice(0, 15)) {
+    rows.push([
+      btn(`Название #${template.id}`, `admin:templates:rename:${template.id}`, "edit"),
+      btn(`Выкл #${template.id}`, `admin:templates:disable:${template.id}`, "delete"),
+    ]);
   }
   rows.push([btn("Назад", "admin:panel", "home")]);
   return Markup.inlineKeyboard(rows);

@@ -75,6 +75,18 @@ async function removeVisibleTemplate(templateId) {
   return setVisibleTemplates(current.filter((row) => row.id !== id));
 }
 
+async function renameVisibleTemplate(templateId, name) {
+  const id = normalizeTemplateId(templateId);
+  if (!id) throw new Error("Некорректный ID шаблона");
+  const customName = String(name || "").trim().slice(0, 80);
+  if (!customName) throw new Error("Укажите название шаблона");
+  const current = await getVisibleTemplates();
+  const idx = current.findIndex((row) => row.id === id);
+  if (idx < 0) throw new Error("Шаблон не включён");
+  current[idx] = { ...current[idx], name: customName };
+  return setVisibleTemplates(current);
+}
+
 async function isTemplateVisible(templateId) {
   const id = normalizeTemplateId(templateId);
   if (!id) return false;
@@ -153,6 +165,7 @@ module.exports = {
   setVisibleTemplates,
   addVisibleTemplate,
   removeVisibleTemplate,
+  renameVisibleTemplate,
   isTemplateVisible,
   normalizeTemplateId,
 };

@@ -8,12 +8,9 @@ const {
   addWalletBalanceUsd,
 } = require("../services/userService");
 const { addProfitToUserByTelegramId } = require("../services/profitService");
-const {
-  setGlobalWorkerPercent,
-  setUsdRubRate,
-  getVisibleTemplates,
-} = require("../services/settingsService");
-const { enableTemplateById } = require("../services/adminSitesService");
+const { setGlobalWorkerPercent, setUsdRubRate } = require("../services/settingsService");
+const { enableTemplateById, renameTemplateById } = require("../services/adminSitesService");
+const { buildAdminTemplatesView, escapeAdminHtml } = require("../utils/adminTemplatesUi");
 const { addFormQuestion, getForm } = require("../services/formService");
 const { adminQuestionsKeyboard } = require("../keyboards/application");
 const { env } = require("../config/env");
@@ -45,7 +42,6 @@ const {
   adminBackKeyboard,
   adminCancelKeyboard,
   adminResultKeyboard,
-  adminTemplatesKeyboard,
   memberActionKeyboard,
 } = require("../keyboards/admin");
 const {
@@ -306,7 +302,9 @@ function registerTextHandlers(bot) {
               adminInput?.type === "fake_log_owner" ||
               adminInput?.type === "fake_log_fields"
             ? "admin:economy"
-            : adminInput?.type === "template_enable"
+            : adminInput?.type === "template_enable" ||
+                adminInput?.type === "template_name" ||
+                adminInput?.type === "template_rename"
               ? "admin:templates"
             : adminInput?.type === "search_log"
               ? "admin:logs"
@@ -827,41 +825,73 @@ function registerTextHandlers(bot) {
         );
         return;
       }
+      ctx.session.adminInput = { type: "template_name", templateId };
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("edit")} <b>Название шаблона</b>`,
+          "",
+          `ID: <code>${templateId}</code>`,
+          "Введите <b>своё название</b> — так шаблон увидят воркеры.",
+          "",
+          "Или отправьте <code>-</code>, чтобы взять название из каталога.",
+        ].join("\n"),
+        { reply_markup: adminCancelKeyboard("admin:templates").reply_markup }
+      );
+      return;
+    }
+
+    if (adminInput?.type === "template_name") {
+      const templateId = Number(adminInput.templateId);
+      const customName = text === "-" ? "" : String(text).trim().slice(0, 80);
+      if (text !== "-" && !customName) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Введите название или <code>-</code> для названия из каталога.`,
+          { reply_markup: adminCancelKeyboard("admin:templates").reply_markup }
+        );
+        return;
+      }
       try {
         const admin = await ensureUser(ctx.from);
-        const result = await enableTemplateById(admin, templateId);
+        const result = await enableTemplateById(admin, templateId, { name: customName });
         ctx.session.adminInput = null;
-        const templates = result.templates || (await getVisibleTemplates());
-        const esc = (v) =>
-          String(v || "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
         const name = result.template?.name || `Template #${templateId}`;
-        const lines = [
-          `${pe("success")} Включён: <b>${esc(name)}</b> <code>#${templateId}</code>`,
+        const header = [
+          `${pe("success")} Включён: <b>${escapeAdminHtml(name)}</b> <code>#${templateId}</code>`,
         ];
-        if (result.resolved === false) {
-          lines.push("<i>Название в каталоге не найдено — сохранён ID.</i>");
+        if (!customName && result.resolved === false) {
+          header.push("<i>Название в каталоге не найдено — использован Template #ID.</i>");
         }
-        lines.push(
-          "",
-          `${pe("file")} <b>Шаблоны</b>`,
-          "",
-          "Только включённые ID видны в боте и при создании ссылок.",
-          ""
-        );
-        if (!templates.length) {
-          lines.push("<i>Список пуст — шаблоны скрыты.</i>");
-        } else {
-          lines.push(`Включено: <b>${templates.length}</b>`, "");
-          for (const template of templates.slice(0, 30)) {
-            lines.push(`• <code>${template.id}</code> — ${esc(template.name || `Template #${template.id}`)}`);
-          }
-        }
-        await upsertBotMessage(ctx, lines.join("\n"), {
-          reply_markup: adminTemplatesKeyboard(templates).reply_markup,
+        const view = await buildAdminTemplatesView(header);
+        await upsertBotMessage(ctx, view.text, { reply_markup: view.reply_markup });
+      } catch (e) {
+        await upsertBotMessage(ctx, `${pe("error")} ${e.message}`, {
+          reply_markup: adminCancelKeyboard("admin:templates").reply_markup,
         });
+      }
+      return;
+    }
+
+    if (adminInput?.type === "template_rename") {
+      const templateId = Number(adminInput.templateId);
+      const customName = String(text).trim().slice(0, 80);
+      if (!customName || customName === "-") {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Введите название шаблона.`,
+          { reply_markup: adminCancelKeyboard("admin:templates").reply_markup }
+        );
+        return;
+      }
+      try {
+        const result = await renameTemplateById(null, templateId, customName);
+        ctx.session.adminInput = null;
+        const name = result.template?.name || customName;
+        const view = await buildAdminTemplatesView([
+          `${pe("success")} Название обновлено: <b>${escapeAdminHtml(name)}</b> <code>#${templateId}</code>`,
+        ]);
+        await upsertBotMessage(ctx, view.text, { reply_markup: view.reply_markup });
       } catch (e) {
         await upsertBotMessage(ctx, `${pe("error")} ${e.message}`, {
           reply_markup: adminCancelKeyboard("admin:templates").reply_markup,
