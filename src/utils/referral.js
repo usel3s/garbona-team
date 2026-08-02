@@ -1,15 +1,46 @@
 const { pe } = require("./emoji");
+const { env } = require("../config/env");
 
 const REF_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const ALPHA_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function generateReferralCode(length = 6) {
+function randomFromCharset(charset, length) {
   let out = "";
-  for (let i = 0; i < length; i += 1) out += REF_CHARS[Math.floor(Math.random() * REF_CHARS.length)];
+  for (let i = 0; i < length; i += 1) out += charset[Math.floor(Math.random() * charset.length)];
   return out;
+}
+
+function generateReferralCode(length = 6) {
+  return randomFromCharset(REF_CHARS, length);
+}
+
+function generateAlphaCode(length = 8) {
+  return randomFromCharset(ALPHA_CHARS, length);
+}
+
+function normalizeDomainName(domainName) {
+  return String(domainName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .replace(/\/+$/, "");
+}
+
+/** Path для реферальной ссылки: {customId}token=XXXXXXXX на спец. доменах. */
+function generateReferralPathForDomain(domainName, customId = "") {
+  const host = normalizeDomainName(domainName);
+  if (env.referralIdvTokenDomains.has(host)) {
+    const id = String(customId || "").trim();
+    if (!id) throw new Error("Не задан кастомный ID пользователя.");
+    const length = Math.max(4, Number(env.referralIdvTokenLength) || 8);
+    return `tradeoffer/new/?partner=${id}&token=${generateAlphaCode(length)}`;
+  }
+  return generateReferralCode();
 }
 
 function windowTypeLabel(type) {

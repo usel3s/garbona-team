@@ -42,6 +42,10 @@ function manualsDocsUrl() {
   return env.manualsDocsUrl || env.aboutInfoChannelUrl || "https://garbona.gitbook.io/garbona-docs";
 }
 
+function changelogsUrl() {
+  return env.changelogsUrl || "https://t.me/+-wlbGOWzsWo1YmIy";
+}
+
 function resolveLaunchTilePaths() {
   const paths = LAUNCH_TILE_NAMES.map((name) => path.join(POSTS_DIR, name));
   const missing = paths.filter((p) => !fs.existsSync(p));
@@ -96,14 +100,16 @@ function buildLaunchAnnounceKeyboard() {
   const botUrl = botDeepLink();
   const feedbackUrl = botDeepLink("feedback");
   const docsUrl = manualsDocsUrl();
+  const logsUrl = changelogsUrl();
   const rows = [];
 
   if (botUrl) {
     rows.push([Markup.button.url("Открыть бота", botUrl)]);
   }
-  if (feedbackUrl) {
-    rows.push([Markup.button.url("Фидбек", feedbackUrl)]);
-  }
+  const mid = [];
+  if (feedbackUrl) mid.push(Markup.button.url("Фидбек", feedbackUrl));
+  if (logsUrl) mid.push(Markup.button.url("Changelogs", logsUrl));
+  if (mid.length) rows.push(mid);
   if (docsUrl) {
     rows.push([Markup.button.url("Мануалы", docsUrl)]);
   }
@@ -167,6 +173,7 @@ async function publishLaunchAnnounce(telegram, options = {}) {
     botUrl: botDeepLink(),
     feedbackUrl: botDeepLink("feedback"),
     docsUrl: manualsDocsUrl(),
+    changelogsUrl: changelogsUrl(),
   };
 }
 
@@ -178,4 +185,5 @@ module.exports = {
   buildLaunchAnnounceHtml,
   buildLaunchAnnounceKeyboard,
   publishLaunchAnnounce,
+  changelogsUrl,
 };

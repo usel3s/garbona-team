@@ -635,6 +635,21 @@ MAC-10 | Neon Rider (Factory New)</textarea>
             </div>
           </div>
         </div>
+        <div class="settings-section">
+          <div class="settings-section-label">
+            <h3 class="settings-section-title">Changelog</h3>
+            <span class="settings-section-desc">Нужен CHANGELOGS_CHAT_ID в .env</span>
+          </div>
+          <div class="settings-card">
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <div class="settings-row-title">Опубликовать changelog</div>
+                <div class="settings-row-desc">Monospace (&lt;pre&gt;) в канал changelogs</div>
+              </div>
+              <button type="button" class="btn-primary" id="changelogBtn">Опубликовать</button>
+            </div>
+          </div>
+        </div>
       </div>
     `;
     document.getElementById("broadcastBtn").addEventListener("click", async () => {
@@ -662,6 +677,16 @@ MAC-10 | Neon Rider (Factory New)</textarea>
         const data = await PanelAPI.post("/admin/comms/launch-announce", {});
         const r = data.result || data;
         toast(`Опубликовано · msg ${r.messageId || "ok"}${r.pinned ? " · закреплено" : ""}`);
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    });
+    document.getElementById("changelogBtn").addEventListener("click", async () => {
+      if (!confirm("Опубликовать changelog в канал?")) return;
+      try {
+        const data = await PanelAPI.post("/admin/comms/changelog", {});
+        const r = data.result || data;
+        toast(`Changelog · msg ${r.messageId || "ok"}${r.pinned ? " · закреплено" : ""}`);
       } catch (e) {
         toast(e.message, "error");
       }

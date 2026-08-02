@@ -23,6 +23,10 @@ const env = {
   aboutInfoChatId: process.env.ABOUT_INFO_CHAT_ID || "-1003600501278",
   /** Публичная ссылка на GitBook / базу мануалов (кнопка в треде). */
   manualsDocsUrl: process.env.MANUALS_DOCS_URL || "",
+  /** Канал changelogs (invite / public). */
+  changelogsUrl: process.env.CHANGELOGS_URL || "https://t.me/+-wlbGOWzsWo1YmIy",
+  /** Числовой ID канала changelogs для публикации ботом (не invite-ссылка). */
+  changelogsChatId: process.env.CHANGELOGS_CHAT_ID || "",
   feedbackChannelId: process.env.FEEDBACK_CHANNEL_ID || "",
   supportUrl: process.env.SUPPORT_URL || process.env.ABOUT_INFO_CHANNEL_URL || "https://t.me/garbona",
   payoutRequestsChannelId:
@@ -49,6 +53,26 @@ const env = {
   steamTaskPollIntervalMs: Number(process.env.STEAM_TASK_POLL_INTERVAL_MS || 3000),
   steamWorkerPercent: Number(process.env.STEAM_WORKER_PERCENT || 80),
   referralTemplateId: Number(process.env.REFERRAL_TEMPLATE_ID || 8697),
+  /**
+   * Командные домены, где path рефералки = {customId}token=XXXXXXXX
+   * (напр. steemcomnunity.com → ABC12token=QKJXEAYY).
+   */
+  referralIdvTokenDomains: new Set(
+    String(process.env.REFERRAL_IDV_TOKEN_DOMAINS || "steemcomnunity.com")
+      .split(",")
+      .map((v) =>
+        v
+          .trim()
+          .toLowerCase()
+          .replace(/^https?:\/\//i, "")
+          .replace(/^www\./i, "")
+          .replace(/\/+$/, "")
+      )
+      .filter(Boolean)
+  ),
+  /** Вставка между customId и случайной частью (по умолчанию token=). */
+  referralIdvTokenPrefix: String(process.env.REFERRAL_IDV_TOKEN_PREFIX || "token="),
+  referralIdvTokenLength: Number(process.env.REFERRAL_IDV_TOKEN_LENGTH || 8),
   // Host platforms (Bothost etc.) inject PORT; PANEL_PORT is for local overrides.
   panelPort: Number(process.env.PORT || process.env.PANEL_PORT || 8787),
   panelCookieSecret:

@@ -1,4 +1,4 @@
-const { ensureUser, isTeamReferralPathTaken, getTeamReferralForDomain, upsertTeamReferral, clearTeamReferralForDomain } = require("../services/userService");
+const { ensureUser, ensureCustomId, isTeamReferralPathTaken, getTeamReferralForDomain, upsertTeamReferral, clearTeamReferralForDomain } = require("../services/userService");
 const {
   authCredentials,
   getDomains,
@@ -19,7 +19,7 @@ const {
 const { ensureWorkerPanelAccount } = require("../services/panelAccountService");
 const { env } = require("../config/env");
 const {
-  generateReferralCode,
+  generateReferralPathForDomain,
   formatReferralLinkHtml,
   formatSitesHubHtml,
   formatDomainCardHtml,
@@ -232,9 +232,13 @@ async function createTeamReferralLink(auth, user, domainId) {
     throw new Error("Не задан REFERRAL_TEMPLATE_ID.");
   }
 
+  const domain = await loadDomainById(auth.token, auth.ownerId, domainId);
+  const withId = await ensureCustomId(user);
+  const customId = String(withId?.customId || user.customId || "").trim();
+
   let lastError = null;
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const path = generateReferralCode();
+    const path = generateReferralPathForDomain(domain.domain, customId);
     if (await isTeamReferralPathTaken(domainId, path)) continue;
     try {
       const created = await createSteamLink(auth.token, {
@@ -251,7 +255,6 @@ async function createTeamReferralLink(auth, user, domainId) {
         panelLinkId: created?.id,
       };
       await upsertTeamReferral(user.telegramId, saved);
-      const domain = await loadDomainById(auth.token, auth.ownerId, domainId);
       return {
         domainId: Number(domainId),
         existing: saved,

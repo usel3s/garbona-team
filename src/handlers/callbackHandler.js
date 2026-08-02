@@ -103,6 +103,10 @@ const {
   publishLaunchAnnounce,
   launchAnnounceChatId,
 } = require("../services/launchAnnounceService");
+const {
+  publishChangelog,
+  changelogsChatId,
+} = require("../services/changelogService");
 const { authCredentials, getTeamWorkers, formatPanelError } = require("../services/apiService");
 const {
   ensureWorkerPanelAccount,
@@ -1221,6 +1225,40 @@ function registerCallbackHandlers(bot) {
           "",
           `Канал: <code>${launchAnnounceChatId()}</code>`,
           "Добавь бота в канал админом с правом писать и закреплять сообщения.",
+        ].join("\n"),
+        { reply_markup: adminResultKeyboard("admin:comms").reply_markup }
+      );
+    }
+  });
+
+  bot.action("admin:changelog", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    try {
+      const result = await publishChangelog(ctx.telegram);
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("success")} <b>Changelog опубликован</b>`,
+          "",
+          `Канал: <code>${result.chatId}</code>`,
+          `Message ID: <code>${result.messageId}</code>`,
+          result.pinned ? "Сообщение закреплено." : "Закрепить не удалось (проверь права).",
+        ].join("\n"),
+        { reply_markup: adminResultKeyboard("admin:comms").reply_markup }
+      );
+    } catch (e) {
+      const desc = e?.response?.description || e.message || "ошибка";
+      logger.warn("admin:changelog failed", desc);
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("error")} <b>Не удалось опубликовать changelog</b>`,
+          "",
+          String(desc),
+          "",
+          `CHANGELOGS_CHAT_ID: <code>${changelogsChatId() || "не задан"}</code>`,
+          "Нужен числовой id канала (не invite-ссылка). Бот — админ канала.",
         ].join("\n"),
         { reply_markup: adminResultKeyboard("admin:comms").reply_markup }
       );
