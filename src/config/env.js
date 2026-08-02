@@ -12,6 +12,10 @@ const env = {
   applicationsChannelId: process.env.APPLICATIONS_CHANNEL_ID || "-5246061488",
   aboutPayoutsChatId: process.env.ABOUT_PAYOUTS_CHAT_ID || "-1003821514718",
   aboutWorkersChatId: process.env.ABOUT_WORKERS_CHAT_ID || "-1003710871843",
+  /** Чат динамического закрепа (по умолчанию чат воркеров). */
+  dynamicPinChatId: process.env.DYNAMIC_PIN_CHAT_ID || process.env.ABOUT_WORKERS_CHAT_ID || "",
+  /** Интервал обновления закрепа, мс (мин. 60с). */
+  dynamicPinIntervalMs: Number(process.env.DYNAMIC_PIN_INTERVAL_MS || 300000),
   aboutManualsChatId: process.env.ABOUT_MANUALS_CHAT_ID || "-1003731342806",
   aboutInfoChannelUrl:
     process.env.ABOUT_INFO_CHANNEL_URL || "https://t.me/garbona",

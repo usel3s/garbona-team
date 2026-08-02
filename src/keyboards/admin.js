@@ -60,6 +60,7 @@ function adminCommsKeyboard() {
     [btn("Тред мануалов", "admin:manuals_thread", "file")],
     [btn("Анонс бота", "admin:launch_announce", "celebrate")],
     [btn("Changelog", "admin:changelog", "file")],
+    [btn("Динамический закреп", "admin:dynamic_pin", "notification")],
     [btn("Назад", "admin:panel", "home")],
   ]);
 }

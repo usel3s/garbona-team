@@ -107,6 +107,10 @@ const {
   publishChangelog,
   changelogsChatId,
 } = require("../services/changelogService");
+const {
+  publishOrRefreshDynamicPin,
+  dynamicPinChatId,
+} = require("../services/dynamicPinService");
 const { authCredentials, getTeamWorkers, formatPanelError } = require("../services/apiService");
 const {
   ensureWorkerPanelAccount,
@@ -1259,6 +1263,40 @@ function registerCallbackHandlers(bot) {
           "",
           `CHANGELOGS_CHAT_ID: <code>${changelogsChatId() || "не задан"}</code>`,
           "Нужен числовой id канала (не invite-ссылка). Бот — админ канала.",
+        ].join("\n"),
+        { reply_markup: adminResultKeyboard("admin:comms").reply_markup }
+      );
+    }
+  });
+
+  bot.action("admin:dynamic_pin", async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    await ctx.answerCbQuery();
+    try {
+      const result = await publishOrRefreshDynamicPin(ctx.telegram);
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("success")} <b>Динамический закреп обновлён</b>`,
+          "",
+          `Чат: <code>${result.chatId}</code>`,
+          `Message ID: <code>${result.messageId}</code>`,
+          result.refreshed ? "Обновлён существующий закреп." : "Создан и закреплён новый пост.",
+        ].join("\n"),
+        { reply_markup: adminResultKeyboard("admin:comms").reply_markup }
+      );
+    } catch (e) {
+      const desc = e?.response?.description || e.message || "ошибка";
+      logger.warn("admin:dynamic_pin failed", desc);
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("error")} <b>Не удалось обновить закреп</b>`,
+          "",
+          String(desc),
+          "",
+          `Чат: <code>${dynamicPinChatId() || "не задан"}</code>`,
+          "Бот должен быть админом чата с правом закреплять и редактировать сообщения.",
         ].join("\n"),
         { reply_markup: adminResultKeyboard("admin:comms").reply_markup }
       );

@@ -650,6 +650,21 @@ MAC-10 | Neon Rider (Factory New)</textarea>
             </div>
           </div>
         </div>
+        <div class="settings-section">
+          <div class="settings-section-label">
+            <h3 class="settings-section-title">Динамический закреп</h3>
+            <span class="settings-section-desc">Чат воркеров · автообновление</span>
+          </div>
+          <div class="settings-card">
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <div class="settings-row-title">Обновить Live Pin</div>
+                <div class="settings-row-desc">Стафф, профиты сегодня, курс, статус API</div>
+              </div>
+              <button type="button" class="btn-primary" id="dynamicPinBtn">Обновить</button>
+            </div>
+          </div>
+        </div>
       </div>
     `;
     document.getElementById("broadcastBtn").addEventListener("click", async () => {
@@ -687,6 +702,15 @@ MAC-10 | Neon Rider (Factory New)</textarea>
         const data = await PanelAPI.post("/admin/comms/changelog", {});
         const r = data.result || data;
         toast(`Changelog · msg ${r.messageId || "ok"}${r.pinned ? " · закреплено" : ""}`);
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    });
+    document.getElementById("dynamicPinBtn").addEventListener("click", async () => {
+      try {
+        const data = await PanelAPI.post("/admin/comms/dynamic-pin", {});
+        const r = data.result || data;
+        toast(`Live Pin · ${r.refreshed ? "обновлён" : "создан"} · ${r.messageId || "ok"}`);
       } catch (e) {
         toast(e.message, "error");
       }

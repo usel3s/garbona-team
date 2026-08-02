@@ -11,6 +11,7 @@ const { registerModerationCommands } = require("./commands/moderation");
 const { registerCallbackHandlers } = require("./handlers/callbackHandler");
 const { registerTextHandlers } = require("./handlers/textHandler");
 const { registerInlineHandlers } = require("./handlers/inlineHandler");
+const { registerServiceMessageHandlers } = require("./handlers/serviceMessageHandler");
 const { applicationScene } = require("./scenes/applicationScene");
 const { postbotScene } = require("./scenes/postbotScene");
 const { broadcastScene } = require("./scenes/broadcastScene");
@@ -99,6 +100,7 @@ async function bootstrap() {
     logger.error("Telegraf catch", error, ctx?.updateType || "");
   });
 
+  registerServiceMessageHandlers(bot);
   registerStartCommand(bot);
   registerFeedbackCommand(bot);
   registerCuratorCommand(bot);
@@ -155,6 +157,9 @@ async function bootstrap() {
   });
   logger.info("Bot started");
   startSteamMonitor(bot);
+
+  const { startDynamicPinScheduler } = require("./services/dynamicPinService");
+  startDynamicPinScheduler(bot);
 
   try {
     const me = await bot.telegram.getMe();
