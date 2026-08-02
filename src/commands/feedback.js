@@ -67,9 +67,7 @@ async function renderFeedbackMenu(ctx) {
       "",
       "Здесь можно сообщить о баге, задать вопрос или предложить идею.",
       "",
-      `${pe("file")} <b>Мои обращения</b> — список в inline-режиме.`,
-      `${pe("edit")} <b>Написать обращение</b> — новое сообщение команде.`,
-      link ? `\n${pe("link")} Ссылка: <code>${link}</code>` : "",
+      link ? `\n${pe("link")} Быстрый доступ: <code>${link}</code>` : "",
     ]
       .filter(Boolean)
       .join("\n"),
