@@ -36,6 +36,8 @@ const userSchema = new mongoose.Schema(
     panelUsername: { type: String, default: "" },
     panelPassword: { type: String, default: "" },
     panelCreatedAt: { type: Date, default: null },
+    payoutMethod: { type: String, default: "" },
+    payoutAddress: { type: String, default: "" },
     teamReferrals: [
       {
         domainId: { type: Number, required: true },

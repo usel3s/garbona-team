@@ -294,6 +294,7 @@ function payoutApprovedUserKeyboard(url) {
 }
 
 module.exports = {
+  METHOD_LABELS,
   methodLabel,
   getNetworkFeeUsd,
   calcPayoutBreakdown,
