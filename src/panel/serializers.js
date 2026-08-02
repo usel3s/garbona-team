@@ -5,6 +5,7 @@ function serializeMember(user, currencyCtx) {
   const walletUsd = Number(user.totalProfit || 0);
   return {
     telegramId: String(user.telegramId),
+    customId: user.customId || "",
     username: user.username || "",
     firstName: user.firstName || "",
     role: user.role || "user",

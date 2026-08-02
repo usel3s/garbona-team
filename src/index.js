@@ -29,6 +29,16 @@ async function bootstrap() {
   validateEnv();
   await connectDatabase();
 
+  const { backfillTeamCustomIds } = require("./services/userService");
+  try {
+    const result = await backfillTeamCustomIds();
+    if (result.updated > 0) {
+      logger.info(`Assigned customId to ${result.updated} team member(s)`);
+    }
+  } catch (error) {
+    logger.warn("customId backfill failed", error.message);
+  }
+
   const bot = new Telegraf(env.botToken);
   const stage = new Scenes.Stage([applicationScene, postbotScene, broadcastScene]);
 

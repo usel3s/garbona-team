@@ -49,6 +49,7 @@ window.PanelMember = (function () {
     body.innerHTML = `
       <dl class="meta-grid">
         <dt>Telegram ID</dt><dd><code>${m.telegramId}</code></dd>
+        <dt>Custom ID</dt><dd><code>${m.customId || "—"}</code></dd>
         <dt>Роль</dt><dd>${m.role}</dd>
         <dt>Кошелёк</dt><dd>${m.walletDisplay}</dd>
         <dt>Процент</dt><dd>${m.profitPercent}%</dd>

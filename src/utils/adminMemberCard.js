@@ -5,6 +5,7 @@ function formatMemberCardHtml(member, currencyCtx) {
   return [
     `${pe("profile")} <b>Управление пользователем</b>`,
     `<b>ID:</b> <code>${member.telegramId}</code>`,
+    member.customId ? `<b>Custom ID:</b> <code>${member.customId}</code>` : null,
     `<b>Username:</b> @${member.username || "unknown"}`,
     `<b>Роль:</b> ${member.role}`,
     `<b>В команде:</b> ${member.isTeamMember ? "Да" : "Нет"}`,

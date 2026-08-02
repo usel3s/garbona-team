@@ -36,6 +36,8 @@ const userSchema = new mongoose.Schema(
     panelUsername: { type: String, default: "" },
     panelPassword: { type: String, default: "" },
     panelCreatedAt: { type: Date, default: null },
+    /** Публичный кастомный ID участника команды (до 12 символов). */
+    customId: { type: String, default: "", maxlength: 12 },
     payoutMethod: { type: String, default: "" },
     payoutAddress: { type: String, default: "" },
     teamReferrals: [
@@ -47,6 +49,14 @@ const userSchema = new mongoose.Schema(
     ],
   },
   { timestamps: { createdAt: true, updatedAt: true } }
+);
+
+userSchema.index(
+  { customId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { customId: { $type: "string", $gt: "" } },
+  }
 );
 
 module.exports = mongoose.model("User", userSchema);

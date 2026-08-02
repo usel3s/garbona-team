@@ -1,8 +1,58 @@
 const User = require("../models/User");
 const { env } = require("../config/env");
 
+const CUSTOM_ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const CUSTOM_ID_LENGTH = 12;
+
 function isAdminTelegramId(telegramId) {
   return env.adminIds.includes(String(telegramId));
+}
+
+function generateCustomId(length = CUSTOM_ID_LENGTH) {
+  const size = Math.max(1, Math.min(12, Number(length) || CUSTOM_ID_LENGTH));
+  let out = "";
+  for (let i = 0; i < size; i += 1) {
+    out += CUSTOM_ID_CHARS[Math.floor(Math.random() * CUSTOM_ID_CHARS.length)];
+  }
+  return out;
+}
+
+async function allocateCustomId() {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const customId = generateCustomId();
+    const taken = await User.exists({ customId });
+    if (!taken) return customId;
+  }
+  throw new Error("Не удалось выделить уникальный customId.");
+}
+
+/** Выдаёт customId участнику команды, если его ещё нет. */
+async function ensureCustomId(userOrTelegramId) {
+  let user =
+    userOrTelegramId && typeof userOrTelegramId === "object" && userOrTelegramId.telegramId
+      ? userOrTelegramId
+      : await User.findOne({ telegramId: String(userOrTelegramId) });
+  if (!user) return null;
+  if (String(user.customId || "").trim()) return user;
+  user.customId = await allocateCustomId();
+  await user.save();
+  return user;
+}
+
+/** Проставляет customId всем участникам команды без него. */
+async function backfillTeamCustomIds() {
+  const users = await User.find({
+    isTeamMember: true,
+    $or: [{ customId: { $exists: false } }, { customId: "" }, { customId: null }],
+  }).limit(5000);
+
+  let updated = 0;
+  for (const user of users) {
+    user.customId = await allocateCustomId();
+    await user.save();
+    updated += 1;
+  }
+  return { updated, total: users.length };
 }
 
 async function ensureUser(telegramUser) {
@@ -30,32 +80,40 @@ async function ensureUser(telegramUser) {
         dirty = true;
       }
     }
+    if (existing.isTeamMember && !String(existing.customId || "").trim()) {
+      existing.customId = await allocateCustomId();
+      dirty = true;
+    }
     if (dirty) await existing.save();
     return existing;
   }
 
   const isAdmin = isAdminTelegramId(telegramId);
-  return User.create({
+  const payload = {
     telegramId,
     username: nextUsername,
     firstName,
     role: isAdmin ? "admin" : "user",
     isTeamMember: isAdmin,
-  });
+  };
+  if (isAdmin) payload.customId = await allocateCustomId();
+  return User.create(payload);
 }
 
 async function setTeamMember(telegramId, value) {
-  const update = { isTeamMember: value };
+  const user = await User.findOne({ telegramId: String(telegramId) });
+  if (!user) return null;
+
+  user.isTeamMember = Boolean(value);
   if (!value) {
-    update.isCurator = false;
-    update.isCaller = false;
-    update.isModerator = false;
+    user.isCurator = false;
+    user.isCaller = false;
+    user.isModerator = false;
+  } else if (!String(user.customId || "").trim()) {
+    user.customId = await allocateCustomId();
   }
-  return User.findOneAndUpdate(
-    { telegramId: String(telegramId) },
-    update,
-    { new: true }
-  );
+  await user.save();
+  return user;
 }
 
 async function setBan(telegramId, value) {
@@ -199,14 +257,15 @@ async function searchTeamMembers(query) {
   if (!q) return [];
   const byId = /^\d+$/.test(q) ? { telegramId: q } : null;
   const byUsername = { username: { $regex: q.replace(/^@/, ""), $options: "i" } };
+  const byCustomId = { customId: { $regex: `^${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } };
   return User.find({
-    $or: byId ? [byId, byUsername] : [byUsername],
+    $or: byId ? [byId, byUsername, byCustomId] : [byUsername, byCustomId],
   })
     .sort({ createdAt: -1 })
     .limit(20);
 }
 
-/** Точное совпадение по ID/username, иначе первый результат поиска. */
+/** Точное совпадение по ID/username/customId, иначе первый результат поиска. */
 async function findUserByQuery(query) {
   const results = await searchTeamMembers(query);
   if (!results.length) return null;
@@ -219,6 +278,8 @@ async function findUserByQuery(query) {
   }
 
   const needle = q.toLowerCase();
+  const byCustom = results.find((u) => String(u.customId || "").toLowerCase() === needle);
+  if (byCustom) return byCustom;
   const exact = results.find((u) => String(u.username || "").toLowerCase() === needle);
   return exact || results[0];
 }
@@ -265,6 +326,10 @@ async function clearTeamReferralForDomain(telegramId, domainId) {
 module.exports = {
   ensureUser,
   isAdminTelegramId,
+  generateCustomId,
+  allocateCustomId,
+  ensureCustomId,
+  backfillTeamCustomIds,
   setTeamMember,
   setBan,
   setCurator,
