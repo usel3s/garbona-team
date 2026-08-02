@@ -31,12 +31,15 @@ const {
 } = require("../services/steamLogAdminService");
 const {
   listUserFeedback,
+  getFeedbackById,
   buildUserTicketHtml,
+  buildFeedbackInlinePreviewHtml,
   typeLabel,
   statusLabel,
   truncate,
 } = require("../services/feedbackService");
 const { adminResultKeyboard } = require("../keyboards/admin");
+const { feedbackTicketKeyboard } = require("../keyboards/feedback");
 
 const MONTHS_RU = [
   "",
@@ -285,20 +288,30 @@ async function buildFeedbackResults(telegramId, filter = "") {
   }
 
   return rows.map((row, idx) => {
+    const id = String(row._id || idx);
     const title = `${typeLabel(row.type)} · ${statusLabel(row.status)}`;
     const description = truncate(row.text, 80);
-    return articleResult({
-      id: `fb-${row._id || idx}`,
+    return {
+      type: "article",
+      id: `fb-${id}`.slice(0, 64),
       title,
       description,
-      messageText: buildUserTicketHtml(row),
-    });
+      input_message_content: {
+        message_text: buildFeedbackInlinePreviewHtml(row),
+        parse_mode: "HTML",
+      },
+      // Маркер для via-замены, если chosen_inline_result опаздывает.
+      reply_markup: {
+        inline_keyboard: [[{ text: "…", callback_data: `feedback:inline:${id}` }]],
+      },
+    };
   });
 }
 
 /** userId → { type, targetId, at } — для замены via-сообщения на карточку с фото */
 const pendingRoleCards = new Map();
 const pendingLogCards = new Map();
+const pendingFeedbackCards = new Map();
 const PENDING_TTL_MS = 20_000;
 
 async function profileTitle(telegram, user) {
@@ -467,6 +480,86 @@ async function replaceViaRoleCard(ctx) {
     ctx.session.ui = { ...(ctx.session.ui || {}), messageId: sent.message_id };
   }
   return true;
+}
+
+async function replaceViaFeedbackCard(ctx) {
+  const text = String(ctx.message?.text || ctx.message?.caption || "");
+  const isPreview = /Загрузка обращения/i.test(text);
+
+  let ticketId = null;
+  const pending = pendingFeedbackCards.get(String(ctx.from?.id || ""));
+  if (pending && Date.now() - pending.at < PENDING_TTL_MS) {
+    ticketId = String(pending.ticketId);
+    pendingFeedbackCards.delete(String(ctx.from.id));
+  }
+
+  const buttons = (ctx.message?.reply_markup?.inline_keyboard || []).flat();
+  for (const button of buttons) {
+    const m = String(button.callback_data || "").match(/^feedback:inline:([a-f0-9]{24})$/i);
+    if (m) {
+      ticketId = m[1];
+      break;
+    }
+  }
+
+  if (!ticketId) return false;
+  if (
+    !isPreview &&
+    !pending &&
+    !buttons.some((b) => /^feedback:inline:/.test(String(b.callback_data || "")))
+  ) {
+    return false;
+  }
+
+  const chatId = ctx.chat?.id;
+  const messageId = ctx.message?.message_id;
+  if (!chatId || !messageId) return false;
+
+  try {
+    await ctx.telegram.deleteMessage(chatId, messageId);
+  } catch (_) {
+    /* already gone */
+  }
+
+  try {
+    const ticket = await getFeedbackById(ticketId);
+    if (!ticket) {
+      await ctx.telegram.sendMessage(
+        chatId,
+        `${pe("error")} Обращение не найдено.`,
+        { parse_mode: "HTML", reply_markup: feedbackTicketKeyboard().reply_markup }
+      );
+      return true;
+    }
+
+    const isOwner = String(ticket.telegramId) === String(ctx.from.id);
+    const isAdmin = isAdminTelegramId(ctx.from.id);
+    if (!isOwner && !isAdmin) {
+      await ctx.telegram.sendMessage(
+        chatId,
+        `${pe("lock")} Это обращение другого пользователя.`,
+        { parse_mode: "HTML" }
+      );
+      return true;
+    }
+
+    const sent = await ctx.telegram.sendMessage(chatId, buildUserTicketHtml(ticket), {
+      parse_mode: "HTML",
+      reply_markup: feedbackTicketKeyboard().reply_markup,
+    });
+    if (ctx.session && sent?.message_id) {
+      ctx.session.ui = { ...(ctx.session.ui || {}), messageId: sent.message_id };
+    }
+    return true;
+  } catch (error) {
+    logger.warn("replaceViaFeedbackCard failed", ticketId, error.message);
+    await ctx.telegram.sendMessage(
+      chatId,
+      `${pe("error")} Не удалось загрузить обращение: ${error.message}`,
+      { parse_mode: "HTML", reply_markup: feedbackTicketKeyboard().reply_markup }
+    );
+    return true;
+  }
 }
 
 async function buildLogsResults(filter = "") {
@@ -672,6 +765,15 @@ function registerInlineHandlers(bot) {
         logId: logMatch[1],
         at: Date.now(),
       });
+      return;
+    }
+
+    const feedbackMatch = /^fb-([a-f0-9]{24})$/i.exec(resultId);
+    if (feedbackMatch) {
+      pendingFeedbackCards.set(String(ctx.from.id), {
+        ticketId: feedbackMatch[1],
+        at: Date.now(),
+      });
     }
   });
 
@@ -682,6 +784,9 @@ function registerInlineHandlers(bot) {
     }
 
     try {
+      const replacedFeedback = await replaceViaFeedbackCard(ctx);
+      if (replacedFeedback) return;
+
       if (isAdminTelegramId(ctx.from?.id)) {
         const replacedLog = await replaceViaLogCard(ctx);
         if (replacedLog) return;

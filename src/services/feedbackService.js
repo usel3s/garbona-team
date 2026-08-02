@@ -2,6 +2,7 @@ const Feedback = require("../models/Feedback");
 const { env } = require("../config/env");
 const { pe } = require("../utils/emoji");
 const { logger } = require("../utils/logger");
+const { feedbackAdminNotifyKeyboard } = require("../keyboards/feedback");
 
 const TYPE_LABELS = {
   bug: "Баг",
@@ -107,12 +108,68 @@ async function createFeedback(user, { type, text }) {
 
 function buildUserTicketHtml(ticket) {
   return [
-    `${pe(typeEmojiKey(ticket.type))} <b>${escapeHtml(typeLabel(ticket.type))}</b>`,
+    `${pe("notification")} <b>Обращение</b>`,
+    "",
+    `${pe(typeEmojiKey(ticket.type))} Тип: <b>${escapeHtml(typeLabel(ticket.type))}</b>`,
     `${pe("tag")} ID: <code>${ticket._id}</code>`,
     `${pe("time")} ${escapeHtml(formatWhen(ticket.createdAt))}`,
     `${pe("visible")} Статус: <b>${escapeHtml(statusLabel(ticket.status))}</b>`,
     "",
+    `${pe("file")} <b>Текст</b>`,
     escapeHtml(ticket.text),
+    ticket.adminReply
+      ? `\n${pe("success")} <b>Ответ команды</b>\n${escapeHtml(ticket.adminReply)}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildFeedbackInlinePreviewHtml(ticket) {
+  return [
+    `${pe("loading")} Загрузка обращения…`,
+    `${pe(typeEmojiKey(ticket.type))} ${escapeHtml(typeLabel(ticket.type))}`,
+    `${pe("tag")} <code>${ticket._id}</code>`,
+  ].join("\n");
+}
+
+function buildAdminTicketHtml(ticket, { footer = "" } = {}) {
+  const nick = ticket.username ? `@${ticket.username}` : "без username";
+  const lines = [
+    `${pe("notification")} <b>Новый фидбек</b>`,
+    "",
+    `${pe(typeEmojiKey(ticket.type))} Тип: <b>${escapeHtml(typeLabel(ticket.type))}</b>`,
+    `${pe("tag")} Ticket: <code>${ticket._id}</code>`,
+    `${pe("profile")} ${escapeHtml(nick)} · <code>${escapeHtml(ticket.telegramId)}</code>`,
+    `${pe("time")} ${escapeHtml(formatWhen(ticket.createdAt))}`,
+    `${pe("visible")} Статус: <b>${escapeHtml(statusLabel(ticket.status))}</b>`,
+    "",
+    escapeHtml(ticket.text),
+  ];
+  if (ticket.adminReply) {
+    lines.push("", `${pe("success")} <b>Ответ:</b>`, escapeHtml(ticket.adminReply));
+  }
+  if (footer) lines.push("", footer);
+  return lines.join("\n");
+}
+
+function buildUserReplyNotifyHtml(ticket) {
+  return [
+    `${pe("notification")} <b>Ответ на обращение</b>`,
+    "",
+    `${pe(typeEmojiKey(ticket.type))} ${escapeHtml(typeLabel(ticket.type))}`,
+    `${pe("tag")} ID: <code>${ticket._id}</code>`,
+    "",
+    escapeHtml(ticket.adminReply || ""),
+  ].join("\n");
+}
+
+function buildUserClosedNotifyHtml(ticket) {
+  return [
+    `${pe("success")} <b>Обращение закрыто</b>`,
+    "",
+    `${pe(typeEmojiKey(ticket.type))} ${escapeHtml(typeLabel(ticket.type))}`,
+    `${pe("tag")} ID: <code>${ticket._id}</code>`,
     ticket.adminReply
       ? `\n${pe("success")} <b>Ответ:</b>\n${escapeHtml(ticket.adminReply)}`
       : "",
@@ -121,22 +178,36 @@ function buildUserTicketHtml(ticket) {
     .join("\n");
 }
 
-function buildAdminTicketHtml(ticket) {
-  const nick = ticket.username ? `@${ticket.username}` : "без username";
-  return [
-    `${pe("notification")} <b>Новый фидбек</b>`,
-    "",
-    `${pe(typeEmojiKey(ticket.type))} Тип: <b>${escapeHtml(typeLabel(ticket.type))}</b>`,
-    `${pe("tag")} Ticket: <code>${ticket._id}</code>`,
-    `${pe("profile")} ${escapeHtml(nick)} · <code>${escapeHtml(ticket.telegramId)}</code>`,
-    `${pe("time")} ${escapeHtml(formatWhen(ticket.createdAt))}`,
-    "",
-    escapeHtml(ticket.text),
-  ].join("\n");
+async function updateAdminNotifyMessage(telegram, ticket, footer) {
+  const chatId = ticket.channelChatId || env.feedbackChannelId || env.applicationsChannelId;
+  const messageId = ticket.channelMessageId;
+  if (!chatId || !messageId) return;
+
+  try {
+    await telegram.editMessageText(
+      chatId,
+      Number(messageId),
+      undefined,
+      buildAdminTicketHtml(ticket, { footer }),
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [] } }
+    );
+  } catch (error) {
+    logger.warn("Feedback notify edit failed", error.message);
+  }
 }
 
 async function notifyAdminsAboutFeedback(telegram, ticket) {
+  if (!env.botUsername) {
+    try {
+      const me = await telegram.getMe();
+      if (me?.username) env.botUsername = me.username;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
   const html = buildAdminTicketHtml(ticket);
+  const keyboard = feedbackAdminNotifyKeyboard(ticket._id);
   const channelId = env.feedbackChannelId || env.applicationsChannelId;
   const targets = [];
   if (channelId) {
@@ -148,11 +219,16 @@ async function notifyAdminsAboutFeedback(telegram, ticket) {
   }
 
   let channelMessageId = "";
+  let channelChatId = "";
   for (const target of targets) {
     try {
-      const msg = await telegram.sendMessage(target, html, { parse_mode: "HTML" });
-      if (!channelMessageId && channelId && target === String(channelId)) {
+      const msg = await telegram.sendMessage(target, html, {
+        parse_mode: "HTML",
+        reply_markup: keyboard.reply_markup,
+      });
+      if (!channelMessageId) {
         channelMessageId = String(msg.message_id);
+        channelChatId = String(target);
       }
     } catch (error) {
       logger.warn("Feedback notify failed", target, error.message);
@@ -161,8 +237,68 @@ async function notifyAdminsAboutFeedback(telegram, ticket) {
 
   if (channelMessageId) {
     ticket.channelMessageId = channelMessageId;
+    ticket.channelChatId = channelChatId;
     await ticket.save();
   }
+}
+
+async function replyToFeedback(telegram, ticketId, adminTelegramId, replyText) {
+  const ticket = await getFeedbackById(ticketId);
+  if (!ticket) throw new Error("Обращение не найдено.");
+
+  const body = String(replyText || "").trim();
+  if (body.length < 2) throw new Error("Ответ слишком короткий.");
+  if (body.length > 2000) throw new Error("Ответ слишком длинный (макс. 2000).");
+
+  ticket.adminReply = body;
+  ticket.status = "closed";
+  ticket.repliedByTelegramId = String(adminTelegramId);
+  ticket.closedByTelegramId = String(adminTelegramId);
+  await ticket.save();
+
+  try {
+    await telegram.sendMessage(ticket.telegramId, buildUserReplyNotifyHtml(ticket), {
+      parse_mode: "HTML",
+    });
+  } catch (error) {
+    logger.warn("Feedback user reply notify failed", ticket.telegramId, error.message);
+  }
+
+  await updateAdminNotifyMessage(
+    telegram,
+    ticket,
+    `${pe("success")} Ответил админ <code>${escapeHtml(String(adminTelegramId))}</code>`
+  );
+
+  return ticket;
+}
+
+async function closeFeedback(telegram, ticketId, adminTelegramId) {
+  const ticket = await getFeedbackById(ticketId);
+  if (!ticket) throw new Error("Обращение не найдено.");
+  if (ticket.status === "closed") {
+    return ticket;
+  }
+
+  ticket.status = "closed";
+  ticket.closedByTelegramId = String(adminTelegramId);
+  await ticket.save();
+
+  try {
+    await telegram.sendMessage(ticket.telegramId, buildUserClosedNotifyHtml(ticket), {
+      parse_mode: "HTML",
+    });
+  } catch (error) {
+    logger.warn("Feedback user close notify failed", ticket.telegramId, error.message);
+  }
+
+  await updateAdminNotifyMessage(
+    telegram,
+    ticket,
+    `${pe("success")} Закрыл админ <code>${escapeHtml(String(adminTelegramId))}</code>`
+  );
+
+  return ticket;
 }
 
 module.exports = {
@@ -178,6 +314,9 @@ module.exports = {
   getFeedbackById,
   createFeedback,
   buildUserTicketHtml,
+  buildFeedbackInlinePreviewHtml,
   buildAdminTicketHtml,
   notifyAdminsAboutFeedback,
+  replyToFeedback,
+  closeFeedback,
 };

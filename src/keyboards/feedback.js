@@ -1,5 +1,6 @@
 const { Markup } = require("telegraf");
-const { btn, switchInlineBtn } = require("../utils/emoji");
+const { btn, urlBtn, switchInlineBtn } = require("../utils/emoji");
+const { env } = require("../config/env");
 
 function feedbackMenuKeyboard() {
   return Markup.inlineKeyboard([
@@ -36,9 +37,57 @@ function feedbackResultKeyboard() {
   ]);
 }
 
+function feedbackTicketKeyboard() {
+  return Markup.inlineKeyboard([
+    [switchInlineBtn("Мои обращения", "feedback", "file")],
+    [btn("Написать ещё", "feedback:new", "edit")],
+    [btn("В меню фидбека", "feedback:menu", "notification")],
+  ]);
+}
+
+function feedbackAdminDeepLink(action, ticketId) {
+  const username = String(env.botUsername || "").replace(/^@/, "");
+  if (!username) return "";
+  return `https://t.me/${username}?start=fb_${action}_${ticketId}`;
+}
+
+/** Кнопки в уведомлении: открывают ЛС бота через deep link. */
+function feedbackAdminNotifyKeyboard(ticketId) {
+  const id = String(ticketId);
+  const replyUrl = feedbackAdminDeepLink("reply", id);
+  const closeUrl = feedbackAdminDeepLink("close", id);
+
+  if (replyUrl && closeUrl) {
+    return Markup.inlineKeyboard([
+      [
+        urlBtn("Ответить", replyUrl, "edit"),
+        urlBtn("Закрыть", closeUrl, "success"),
+      ],
+    ]);
+  }
+
+  // Fallback, если username бота ещё неизвестен.
+  return Markup.inlineKeyboard([
+    [
+      btn("Ответить", `feedback:admin:reply:${id}`, "edit"),
+      btn("Закрыть", `feedback:admin:close:${id}`, "success"),
+    ],
+  ]);
+}
+
+function feedbackAdminReplyCancelKeyboard() {
+  return Markup.inlineKeyboard([
+    [btn("Отменить", "feedback:admin:cancel", "error")],
+  ]);
+}
+
 module.exports = {
   feedbackMenuKeyboard,
   feedbackTypeKeyboard,
   feedbackCancelKeyboard,
   feedbackResultKeyboard,
+  feedbackTicketKeyboard,
+  feedbackAdminNotifyKeyboard,
+  feedbackAdminReplyCancelKeyboard,
+  feedbackAdminDeepLink,
 };

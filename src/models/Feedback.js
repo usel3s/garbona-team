@@ -12,7 +12,10 @@ const feedbackSchema = new mongoose.Schema(
     text: { type: String, required: true, maxlength: 2000 },
     status: { type: String, enum: FEEDBACK_STATUSES, default: "open", index: true },
     adminReply: { type: String, default: "" },
+    channelChatId: { type: String, default: "" },
     channelMessageId: { type: String, default: "" },
+    closedByTelegramId: { type: String, default: "" },
+    repliedByTelegramId: { type: String, default: "" },
   },
   { timestamps: { createdAt: true, updatedAt: true } }
 );

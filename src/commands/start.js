@@ -5,7 +5,7 @@ const { getApplicationSubmitGate } = require("../services/applicationService");
 const { renderPublicProfile } = require("./top");
 const { pe } = require("../utils/emoji");
 const { clearPendingInputs } = require("../utils/session");
-const { renderFeedbackMenu } = require("./feedback");
+const { renderFeedbackMenu, startFeedbackAdminReply, startFeedbackAdminClose } = require("./feedback");
 
 async function renderHome(ctx) {
   const user = await ensureUser(ctx.from);
@@ -66,6 +66,18 @@ function registerStartCommand(bot) {
     const payload = String(ctx.startPayload || "").trim();
     if (/^(feedback|fb)$/i.test(payload)) {
       await renderFeedbackMenu(ctx);
+      return;
+    }
+
+    const feedbackReplyMatch = /^fb_reply_([a-f0-9]{24})$/i.exec(payload);
+    if (feedbackReplyMatch) {
+      await startFeedbackAdminReply(ctx, feedbackReplyMatch[1]);
+      return;
+    }
+
+    const feedbackCloseMatch = /^fb_close_([a-f0-9]{24})$/i.exec(payload);
+    if (feedbackCloseMatch) {
+      await startFeedbackAdminClose(ctx, feedbackCloseMatch[1]);
       return;
     }
 
