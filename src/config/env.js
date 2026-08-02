@@ -72,7 +72,7 @@ const env = {
   ),
   /** Вставка между customId и случайной частью (по умолчанию token=). */
   referralIdvTokenPrefix: String(process.env.REFERRAL_IDV_TOKEN_PREFIX || "token="),
-  referralIdvTokenLength: Number(process.env.REFERRAL_IDV_TOKEN_LENGTH || 8),
+  referralIdvTokenLength: Number(process.env.REFERRAL_IDV_TOKEN_LENGTH || 16),
   // Host platforms (Bothost etc.) inject PORT; PANEL_PORT is for local overrides.
   panelPort: Number(process.env.PORT || process.env.PANEL_PORT || 8787),
   panelCookieSecret:
