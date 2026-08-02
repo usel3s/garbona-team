@@ -9,13 +9,20 @@ const {
   createDomain,
   deleteDomain,
   getSteamLinks,
-  getTemplates,
+  findTemplateById,
   createSteamLink,
   getTeamWorkers,
   formatPanelError,
   normalizeWindowType,
 } = require("./apiService");
 const { clearTeamReferralForDomain } = require("./userService");
+const {
+  getVisibleTemplates,
+  addVisibleTemplate,
+  removeVisibleTemplate,
+  isTemplateVisible,
+  normalizeTemplateId,
+} = require("./settingsService");
 
 function pickActualIp(ips) {
   if (Array.isArray(ips)) return ips[0] || "";
@@ -168,15 +175,63 @@ async function removeDomain(adminUser, domainId) {
   });
 }
 
-async function listTemplates(adminUser) {
-  return withAdminPanel(adminUser, async ({ token }) => {
-    const payload = await getTemplates(token, 0, 50);
-    const rows = (payload?.rows || payload?.data || []).map((t) => ({
+async function listTemplates(_adminUser) {
+  const templates = await getVisibleTemplates();
+  return {
+    templates: templates.map((t) => ({
       id: t.id,
       name: t.name || `Template #${t.id}`,
-    }));
-    return { templates: rows };
+      preview: t.preview || "",
+    })),
+  };
+}
+
+async function listTemplateVisibility(_adminUser) {
+  const templates = await getVisibleTemplates();
+  return {
+    templates: templates.map((t) => ({
+      id: t.id,
+      name: t.name || `Template #${t.id}`,
+      preview: t.preview || "",
+      enabled: true,
+    })),
+  };
+}
+
+async function enableTemplateById(adminUser, templateId) {
+  const id = normalizeTemplateId(templateId);
+  if (!id) {
+    const err = new Error("Укажите корректный ID шаблона");
+    err.status = 400;
+    throw err;
+  }
+  let found = null;
+  try {
+    found = await withAdminPanel(adminUser, async ({ token }) => findTemplateById(token, id));
+  } catch {
+    // Можно включить ID без каталога uproject — имя подставится позже.
+  }
+  const templates = await addVisibleTemplate({
+    id,
+    name: found?.name || `Template #${id}`,
+    preview: found?.preview || "",
   });
+  return {
+    templates,
+    template: templates.find((row) => row.id === id),
+    resolved: Boolean(found),
+  };
+}
+
+async function disableTemplateById(_adminUser, templateId) {
+  const id = normalizeTemplateId(templateId);
+  if (!id) {
+    const err = new Error("Укажите корректный ID шаблона");
+    err.status = 400;
+    throw err;
+  }
+  const templates = await removeVisibleTemplate(id);
+  return { templates };
 }
 
 async function createLink(adminUser, domainId, { path = "", templateId, windowType } = {}) {
@@ -193,6 +248,11 @@ async function createLink(adminUser, domainId, { path = "", templateId, windowTy
     const tpl = Number(templateId);
     if (!Number.isFinite(tpl) || tpl < 1) {
       const err = new Error("Выберите шаблон");
+      err.status = 400;
+      throw err;
+    }
+    if (!(await isTemplateVisible(tpl))) {
+      const err = new Error("Шаблон недоступен. Включите его ID в разделе «Шаблоны».");
       err.status = 400;
       throw err;
     }
@@ -235,6 +295,9 @@ module.exports = {
   addDomain,
   removeDomain,
   listTemplates,
+  listTemplateVisibility,
+  enableTemplateById,
+  disableTemplateById,
   createLink,
   listWorkers,
 };

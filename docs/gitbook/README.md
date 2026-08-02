@@ -31,6 +31,7 @@
 2. Подготовьте устройство — [мануал](dlya-vorkerov/podgotovka-ustroistva.md).
 3. Выберите источник трафика: [YouTube](dlya-vorkerov/youtube.md), [Instagram](dlya-vorkerov/instagram.md), [Snapchat](dlya-vorkerov/snapchat.md).
 4. Оформите заявку в боте — [инструкция](funkcional-bota/zayavka.md).
+5. После одобрения получите рефералку — [сайты и ссылки](funkcional-bota/sayty.md).
 
 ### Полезные ссылки
 

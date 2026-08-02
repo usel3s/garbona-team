@@ -321,8 +321,13 @@
             <div class="toolbar">
               <input class="search-input" id="linkPath" placeholder="path (пусто = random)" />
               <select class="select-input" id="linkTemplate">
-                <option value="">Шаблон…</option>
-                ${templates.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("")}
+                <option value="">${templates.length ? "Шаблон…" : "Нет доступных шаблонов"}</option>
+                ${templates
+                  .map(
+                    (t) =>
+                      `<option value="${t.id}">${escapeHtml(t.name || `Template #${t.id}`)} (#${t.id})</option>`
+                  )
+                  .join("")}
               </select>
               <select class="select-input" id="linkWindow">
                 <option value="FakeWindow">FakeWindow</option>

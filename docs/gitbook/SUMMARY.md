@@ -21,5 +21,6 @@
 ## Функционал бота
 
 * [Старт и заявка](funkcional-bota/zayavka.md)
+* [Сайты и реферальные ссылки](funkcional-bota/sayty.md)
 * [Профиль и кошелёк](funkcional-bota/koshelek.md)
 * [Профиты и выплаты](funkcional-bota/vyplaty.md)

@@ -97,7 +97,14 @@ function templatesKeyboard(templates = []) {
   return Markup.inlineKeyboard([
     ...templates
       .slice(0, 15)
-      .map((template) => [btn(String(template.name).slice(0, 60), `sites:template:${template.id}`, "file")]),
+      .map((template) => [
+        btn(
+          `${template.name || template.id} · #${template.id}`.slice(0, 60),
+          `sites:template:${template.id}`,
+          "file"
+        ),
+      ]),
+    [btn("Поиск по ID", "sites:link:template:search", "edit")],
     [btn("Назад", "sites:link:editor", "home")],
   ]);
 }
@@ -132,11 +139,12 @@ function referralTemplatesKeyboard(domainId, templates = []) {
       .slice(0, 15)
       .map((template) => [
         btn(
-          String(template.name || template.id).slice(0, 60),
+          `${template.name || template.id} · #${template.id}`.slice(0, 60),
           `sites:ref:template:set:${domainId}:${template.id}`,
           "file"
         ),
       ]),
+    [btn("Поиск по ID", `sites:ref:template:search:${domainId}`, "edit")],
     [btn("Назад", `sites:ref:back:${domainId}`, "home")],
   ]);
 }

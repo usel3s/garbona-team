@@ -4,6 +4,84 @@ const User = require("../models/User");
 const GLOBAL_PERCENT_KEY = "globalWorkerPercent";
 const DISPLAY_CURRENCY_KEY = "displayCurrency";
 const USD_RUB_RATE_KEY = "usdRubRate";
+const VISIBLE_TEMPLATES_KEY = "visibleTemplates";
+
+function normalizeTemplateId(value) {
+  const id = Math.trunc(Number(value));
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+function normalizeVisibleTemplate(row) {
+  const id = normalizeTemplateId(row?.id ?? row);
+  if (!id) return null;
+  return {
+    id,
+    name: String(row?.name || `Template #${id}`).trim() || `Template #${id}`,
+    preview: String(row?.preview || "").trim(),
+  };
+}
+
+async function getVisibleTemplates() {
+  const row = await AppSettings.findOne({ key: VISIBLE_TEMPLATES_KEY });
+  if (!row?.valueString) return [];
+  try {
+    const parsed = JSON.parse(row.valueString);
+    if (!Array.isArray(parsed)) return [];
+    const seen = new Set();
+    const result = [];
+    for (const item of parsed) {
+      const tpl = normalizeVisibleTemplate(item);
+      if (!tpl || seen.has(tpl.id)) continue;
+      seen.add(tpl.id);
+      result.push(tpl);
+    }
+    return result;
+  } catch {
+    return [];
+  }
+}
+
+async function setVisibleTemplates(templates) {
+  const normalized = [];
+  const seen = new Set();
+  for (const item of templates || []) {
+    const tpl = normalizeVisibleTemplate(item);
+    if (!tpl || seen.has(tpl.id)) continue;
+    seen.add(tpl.id);
+    normalized.push(tpl);
+  }
+  await AppSettings.findOneAndUpdate(
+    { key: VISIBLE_TEMPLATES_KEY },
+    { valueString: JSON.stringify(normalized) },
+    { upsert: true, new: true }
+  );
+  return normalized;
+}
+
+async function addVisibleTemplate(template) {
+  const tpl = normalizeVisibleTemplate(template);
+  if (!tpl) throw new Error("Некорректный ID шаблона");
+  const current = await getVisibleTemplates();
+  const idx = current.findIndex((row) => row.id === tpl.id);
+  if (idx >= 0) current[idx] = { ...current[idx], ...tpl };
+  else current.push(tpl);
+  return setVisibleTemplates(current);
+}
+
+async function removeVisibleTemplate(templateId) {
+  const id = normalizeTemplateId(templateId);
+  if (!id) throw new Error("Некорректный ID шаблона");
+  const current = await getVisibleTemplates();
+  return setVisibleTemplates(current.filter((row) => row.id !== id));
+}
+
+async function isTemplateVisible(templateId) {
+  const id = normalizeTemplateId(templateId);
+  if (!id) return false;
+  const current = await getVisibleTemplates();
+  return current.some((row) => row.id === id);
+}
+
 async function getGlobalWorkerPercent(defaultValue = 80) {
   const row = await AppSettings.findOne({ key: GLOBAL_PERCENT_KEY });
   if (!row || typeof row.valueNumber !== "number") return defaultValue;
@@ -71,4 +149,10 @@ module.exports = {
   toggleDisplayCurrency,
   getUsdRubRate,
   setUsdRubRate,
+  getVisibleTemplates,
+  setVisibleTemplates,
+  addVisibleTemplate,
+  removeVisibleTemplate,
+  isTemplateVisible,
+  normalizeTemplateId,
 };

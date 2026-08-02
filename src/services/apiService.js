@@ -230,14 +230,42 @@ async function getSteamLinks(token, domainId, offset = 0, limit = 15) {
     CACHE_TTL.links
   );
 }
-async function getTemplates(token, offset = 0, limit = 15) {
-  const key = `${cacheScope(token)}:templates:${offset}:${limit}`;
+async function getTemplates(token, offset = 0, limit = 15, { search } = {}) {
+  const q = String(search || "").trim();
+  const key = `${cacheScope(token)}:templates:${offset}:${limit}:${q || "-"}`;
   return panelDataCache.getOrSet(
     key,
-    async () =>
-      (await withPanelRetry(() => panelClient(token).get("/templates", { params: { offset, limit } }))).data,
+    async () => {
+      const params = { offset, limit };
+      if (q) params.search = q;
+      return (await withPanelRetry(() => panelClient(token).get("/templates", { params }))).data;
+    },
     CACHE_TTL.templates
   );
+}
+
+async function findTemplateById(token, templateId) {
+  const id = Math.trunc(Number(templateId));
+  if (!Number.isFinite(id) || id < 1) return null;
+
+  try {
+    const searched = await getTemplates(token, 0, 50, { search: String(id) });
+    const fromSearch = (searched?.rows || searched?.data || []).find((row) => Number(row?.id) === id);
+    if (fromSearch) return fromSearch;
+  } catch {
+    // search may be unsupported — fall through to pagination
+  }
+
+  let offset = 0;
+  for (let page = 0; page < 20; page += 1) {
+    const payload = await getTemplates(token, offset, 50);
+    const rows = payload?.rows || payload?.data || [];
+    const match = rows.find((row) => Number(row?.id) === id);
+    if (match) return match;
+    if (!payload?.hasNextPage || !rows.length) break;
+    offset += rows.length;
+  }
+  return null;
 }
 async function createSteamLink(token, payload) {
   const data = (await withPanelRetry(() => panelClient(token).post("/steam/links", payload))).data;
@@ -308,6 +336,7 @@ module.exports = {
   deleteDomain,
   getSteamLinks,
   getTemplates,
+  findTemplateById,
   createSteamLink,
   updateSteamLink,
   normalizeWindowType,

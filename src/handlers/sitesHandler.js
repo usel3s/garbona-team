@@ -7,7 +7,6 @@ const {
   createDomain,
   deleteDomain,
   getSteamLinks,
-  getTemplates,
   createSteamLink,
   updateSteamLink,
   normalizeWindowType,
@@ -17,6 +16,7 @@ const {
   isServiceUnavailable,
 } = require("../services/apiService");
 const { ensureWorkerPanelAccount } = require("../services/panelAccountService");
+const { getVisibleTemplates, isTemplateVisible } = require("../services/settingsService");
 const { env } = require("../config/env");
 const {
   generateReferralPathForDomain,
@@ -631,9 +631,11 @@ function registerSitesHandlers(bot) {
     if (!ctx.session?.linkCreate) return ctx.answerCbQuery("Начните создание ссылки", { show_alert: true });
     await ctx.answerCbQuery();
     try {
-      const auth = await getPanelToken(await ensureUser(ctx.from));
-      ctx.session.linkTemplates = (await getTemplates(auth.token, 0, 50)).rows || [];
-      await upsertBotMessage(ctx, `${pe("file")} Выберите шаблон.`, {
+      ctx.session.linkTemplates = await getVisibleTemplates();
+      const emptyHint = ctx.session.linkTemplates.length
+        ? "Выберите шаблон или найдите по ID."
+        : "Нет доступных шаблонов. Можно искать по ID, если админ включил его.";
+      await upsertBotMessage(ctx, `${pe("file")} ${emptyHint}`, {
         reply_markup: templatesKeyboard(ctx.session.linkTemplates).reply_markup,
       });
     } catch (error) {
@@ -641,9 +643,25 @@ function registerSitesHandlers(bot) {
     }
   });
 
+  bot.action("sites:link:template:search", async (ctx) => {
+    if (!ctx.session?.linkCreate) return ctx.answerCbQuery("Начните создание ссылки", { show_alert: true });
+    ctx.session.linkCreateStep = "template_id_input";
+    await ctx.answerCbQuery();
+    await upsertBotMessage(ctx, `${pe("edit")} Введите <b>ID шаблона</b> (только цифры).`, {
+      reply_markup: { inline_keyboard: [[btn("Отменить", "sites:link:template", "error")]] },
+    });
+  });
+
   bot.action(/^sites:template:(\d+)$/, async (ctx) => {
-    const template = ctx.session?.linkTemplates?.find((row) => Number(row.id) === Number(ctx.match[1]));
-    if (!ctx.session?.linkCreate || !template) return ctx.answerCbQuery("Шаблон не найден", { show_alert: true });
+    const templateId = Number(ctx.match[1]);
+    if (!ctx.session?.linkCreate) return ctx.answerCbQuery("Начните создание ссылки", { show_alert: true });
+    if (!(await isTemplateVisible(templateId))) {
+      return ctx.answerCbQuery("Шаблон недоступен", { show_alert: true });
+    }
+    const template =
+      ctx.session?.linkTemplates?.find((row) => Number(row.id) === templateId) ||
+      (await getVisibleTemplates()).find((row) => Number(row.id) === templateId);
+    if (!template) return ctx.answerCbQuery("Шаблон не найден", { show_alert: true });
     Object.assign(ctx.session.linkCreate, { templateId: template.id, templateName: template.name });
     await ctx.answerCbQuery("Шаблон выбран");
     await upsertBotMessage(ctx, `${pe("settings")} <b>Создание ссылки</b>`, {
@@ -811,17 +829,12 @@ function registerSitesHandlers(bot) {
     const domainId = Number(ctx.match[1]);
     await ctx.answerCbQuery();
     try {
-      const cachedTemplates = ctx.session?.linkTemplates;
-      if (Array.isArray(cachedTemplates) && cachedTemplates.length) {
-        await upsertBotMessage(ctx, `${pe("file")} <b>Шаблоны</b>\n\nВыберите шаблон для реферальной ссылки.`, {
-          reply_markup: referralTemplatesKeyboard(domainId, cachedTemplates).reply_markup,
-        });
-        return;
-      }
-      const auth = await resolvePanelAuth(ctx, await ensureUser(ctx.from));
-      const templates = (await getTemplates(auth.token, 0, 30)).rows || [];
+      const templates = await getVisibleTemplates();
       if (ctx.session) ctx.session.linkTemplates = templates;
-      await upsertBotMessage(ctx, `${pe("file")} <b>Шаблоны</b>\n\nВыберите шаблон для реферальной ссылки.`, {
+      const hint = templates.length
+        ? "Выберите шаблон для реферальной ссылки или найдите по ID."
+        : "Нет доступных шаблонов. Можно искать по ID, если админ включил его.";
+      await upsertBotMessage(ctx, `${pe("file")} <b>Шаблоны</b>\n\n${hint}`, {
         reply_markup: referralTemplatesKeyboard(domainId, templates).reply_markup,
       });
     } catch (error) {
@@ -829,9 +842,24 @@ function registerSitesHandlers(bot) {
     }
   });
 
+  bot.action(/^sites:ref:template:search:(\d+)$/, async (ctx) => {
+    const domainId = Number(ctx.match[1]);
+    ctx.session.linkCreateStep = "ref_template_id_input";
+    ctx.session.refTemplateSearchDomainId = domainId;
+    await ctx.answerCbQuery();
+    await upsertBotMessage(ctx, `${pe("edit")} Введите <b>ID шаблона</b> (только цифры).`, {
+      reply_markup: {
+        inline_keyboard: [[btn("Отменить", `sites:ref:template:${domainId}`, "error")]],
+      },
+    });
+  });
+
   bot.action(/^sites:ref:template:set:(\d+):(\d+)$/, async (ctx) => {
     const domainId = Number(ctx.match[1]);
     const templateId = Number(ctx.match[2]);
+    if (!(await isTemplateVisible(templateId))) {
+      return ctx.answerCbQuery("Шаблон недоступен", { show_alert: true });
+    }
     await ctx.answerCbQuery("Шаблон обновлён");
     try {
       const user = await ensureUser(ctx.from);
@@ -843,6 +871,7 @@ function registerSitesHandlers(bot) {
       await updateSteamLink(auth.token, domainId, linkId, linkUpdatePayload(cache, { template: templateId }));
       const templateMeta =
         (ctx.session?.linkTemplates || []).find((row) => Number(row.id) === templateId) ||
+        (await getVisibleTemplates()).find((row) => Number(row.id) === templateId) ||
         cache.row?.template ||
         {};
       cache.row = {
@@ -927,6 +956,84 @@ function registerSitesHandlers(bot) {
       await upsertBotMessage(ctx, `${pe("settings")} <b>Создание ссылки</b>`, {
         reply_markup: linkCreatorKeyboard(ctx.session.linkCreate.domainId, ctx.session.linkCreate).reply_markup,
       });
+      return;
+    }
+    if (ctx.session?.linkCreateStep === "template_id_input" && ctx.session?.linkCreate) {
+      const templateId = Math.trunc(Number(raw));
+      ctx.session.linkCreateStep = null;
+      if (!Number.isFinite(templateId) || templateId < 1) {
+        await upsertBotMessage(ctx, `${pe("error")} Введите корректный ID шаблона (число).`, {
+          reply_markup: templatesKeyboard(await getVisibleTemplates()).reply_markup,
+        });
+        return;
+      }
+      if (!(await isTemplateVisible(templateId))) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Шаблон <code>${templateId}</code> недоступен. Админ должен включить его в панели.`,
+          { reply_markup: templatesKeyboard(await getVisibleTemplates()).reply_markup }
+        );
+        return;
+      }
+      const template =
+        (await getVisibleTemplates()).find((row) => Number(row.id) === templateId) || {
+          id: templateId,
+          name: `Template #${templateId}`,
+        };
+      Object.assign(ctx.session.linkCreate, {
+        templateId: template.id,
+        templateName: template.name,
+      });
+      await upsertBotMessage(ctx, `${pe("settings")} <b>Создание ссылки</b>`, {
+        reply_markup: linkCreatorKeyboard(ctx.session.linkCreate.domainId, ctx.session.linkCreate).reply_markup,
+      });
+      return;
+    }
+    if (ctx.session?.linkCreateStep === "ref_template_id_input") {
+      const domainId = Number(ctx.session.refTemplateSearchDomainId);
+      const templateId = Math.trunc(Number(raw));
+      ctx.session.linkCreateStep = null;
+      ctx.session.refTemplateSearchDomainId = null;
+      if (!Number.isFinite(domainId) || domainId < 1) {
+        await upsertBotMessage(ctx, `${pe("error")} Сессия поиска шаблона устарела.`);
+        return;
+      }
+      if (!Number.isFinite(templateId) || templateId < 1) {
+        await upsertBotMessage(ctx, `${pe("error")} Введите корректный ID шаблона (число).`, {
+          reply_markup: referralTemplatesKeyboard(domainId, await getVisibleTemplates()).reply_markup,
+        });
+        return;
+      }
+      if (!(await isTemplateVisible(templateId))) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Шаблон <code>${templateId}</code> недоступен. Админ должен включить его в панели.`,
+          { reply_markup: referralTemplatesKeyboard(domainId, await getVisibleTemplates()).reply_markup }
+        );
+        return;
+      }
+      try {
+        const user = await ensureUser(ctx.from);
+        const auth = await resolvePanelAuth(ctx, user);
+        let cache = getReferralCache(ctx, domainId);
+        if (!cache) cache = await getReferralView(ctx, user, domainId, auth);
+        const linkId = cache.existing?.panelLinkId || cache.row?.id;
+        if (!linkId) throw new Error("Ссылка не найдена.");
+        await updateSteamLink(auth.token, domainId, linkId, linkUpdatePayload(cache, { template: templateId }));
+        const templateMeta =
+          (await getVisibleTemplates()).find((row) => Number(row.id) === templateId) || {};
+        cache.row = {
+          ...cache.row,
+          template: {
+            id: templateId,
+            name: templateMeta.name || cache.row?.template?.name || String(templateId),
+          },
+        };
+        setReferralCache(ctx, cache);
+        await renderReferralCard(ctx, cache);
+      } catch (error) {
+        await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`);
+      }
       return;
     }
     return next();

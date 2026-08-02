@@ -54,6 +54,9 @@ const {
   addDomain,
   removeDomain,
   listTemplates,
+  listTemplateVisibility,
+  enableTemplateById,
+  disableTemplateById,
   createLink,
   listWorkers,
 } = require("../services/adminSitesService");
@@ -797,6 +800,30 @@ function createPanelRouter(bot) {
   router.get("/admin/sites/templates", requireAdmin, async (req, res) => {
     try {
       res.json(await listTemplates(req.admin));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.get("/admin/sites/templates/visibility", requireAdmin, async (req, res) => {
+    try {
+      res.json(await listTemplateVisibility(req.admin));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.post("/admin/sites/templates/visibility", requireAdmin, async (req, res) => {
+    try {
+      res.json(await enableTemplateById(req.admin, req.body?.id ?? req.body?.templateId));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.delete("/admin/sites/templates/visibility/:id", requireAdmin, async (req, res) => {
+    try {
+      res.json(await disableTemplateById(req.admin, req.params.id));
     } catch (error) {
       res.status(error.status || 400).json({ error: error.message });
     }
