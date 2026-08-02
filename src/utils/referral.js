@@ -308,6 +308,9 @@ function formatReferralLinkHtml(domainName, path, row = {}, domain = null, { own
 
 module.exports = {
   generateReferralCode,
+  generateReferralPathForDomain,
+  generateAlphaCode,
+  normalizeDomainName,
   mergeDeviceCounts,
   formatReferralLinkHtml,
   formatSitesHubHtml,
