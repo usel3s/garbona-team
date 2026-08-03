@@ -12,7 +12,16 @@ function accountPrice(account) {
     account?.steamInfo?.balanceUsd != null
       ? Number(account.steamInfo.balanceUsd)
       : Number(account?.steamInfo?.balance || 0);
-  const inventory = Number(account?.inventory?.price?.total ?? account?.accountPrice ?? 0);
+  const price = account?.inventory?.price || {};
+  const inventory = Number(
+    price.tradable != null
+      ? price.tradable
+      : price.marketable != null
+        ? price.marketable
+        : price.total != null
+          ? price.total
+          : 0
+  );
   const bal = Number.isFinite(balance) ? balance : 0;
   const inv = Number.isFinite(inventory) ? inventory : 0;
   return Number((bal + inv).toFixed(2));
@@ -38,7 +47,7 @@ function serializeLog(row) {
     priceUsd: accountPrice(row),
     status: classifyStatus(row),
     steamId: steam.steamid || steam.steamId || "",
-    gamesCount: Number(row.gameCount ?? row.gamesInfo?.length ?? 0),
+    gamesCount: Number(row.gamesCount ?? row.gameCount ?? row.gamesInfo?.length ?? 0),
   };
 }
 

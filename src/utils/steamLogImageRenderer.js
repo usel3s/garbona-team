@@ -23,6 +23,9 @@ const VALUE_SLOTS = {
 };
 
 const GAME_SLOT = { x: 97, y: 722, w: 267, h: 125 };
+const GAME_GAP = 18;
+const MAX_GAME_SLOTS = 5;
+const GAME_ROW_MAX_X = 1520;
 const FONT_SIZE = 40;
 const MONEY_COLOR = "#59CD53";
 const VALUE_COLOR = "#FFFFFF";
@@ -91,7 +94,16 @@ function formatBalance(account) {
 }
 
 function formatInventory(account) {
-  return formatMoney(account?.inventory?.price?.total ?? account?.accountPrice ?? 0);
+  const price = account?.inventory?.price || {};
+  const raw =
+    price.tradable != null
+      ? price.tradable
+      : price.marketable != null
+        ? price.marketable
+        : price.total != null
+          ? price.total
+          : 0;
+  return formatMoney(raw);
 }
 
 function formatLevel(account) {
@@ -117,12 +129,19 @@ function formatLastActive(account) {
   return formatDateRu(date);
 }
 
-function pickPrimaryGame(account) {
+function listGamesForBanner(account) {
   const games = Array.isArray(account?.gamesInfo) ? account.gamesInfo.filter(Boolean) : [];
-  if (!games.length) return null;
-  const cs2 = games.find((g) => Number(g.appid) === 730 || /counter.?strike/i.test(String(g.name || "")));
-  if (cs2) return cs2;
-  return [...games].sort((a, b) => Number(b.playtime || 0) - Number(a.playtime || 0))[0];
+  if (!games.length) return [];
+  return [...games].sort((a, b) => {
+    const aCs = Number(a.appid) === 730 || /counter.?strike/i.test(String(a.name || "")) ? 1 : 0;
+    const bCs = Number(b.appid) === 730 || /counter.?strike/i.test(String(b.name || "")) ? 1 : 0;
+    if (aCs !== bCs) return bCs - aCs;
+    return Number(b.playtime || 0) - Number(a.playtime || 0);
+  });
+}
+
+function pickPrimaryGame(account) {
+  return listGamesForBanner(account)[0] || null;
 }
 
 function gameImageUrls(game) {
@@ -152,21 +171,40 @@ async function loadRemoteImage(url) {
   return loadImage(Buffer.from(response.data));
 }
 
-async function loadGameImage(account) {
-  const game = pickPrimaryGame(account);
-  if (game) {
-    for (const url of gameImageUrls(game)) {
-      try {
-        return await loadRemoteImage(url);
-      } catch (_) {
-        // try next CDN
-      }
+async function loadSingleGameImage(game) {
+  if (!game) return null;
+  for (const url of gameImageUrls(game)) {
+    try {
+      return await loadRemoteImage(url);
+    } catch (_) {
+      // try next CDN
     }
   }
+  return null;
+}
+
+async function loadGameImages(account) {
+  const games = listGamesForBanner(account).slice(0, MAX_GAME_SLOTS);
+  if (!games.length) {
+    try {
+      const fallback = await loadImage(FALLBACK_GAME_PATH);
+      return [{ image: fallback, game: null }];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  const loaded = await Promise.all(
+    games.map(async (game) => ({ game, image: await loadSingleGameImage(game) }))
+  );
+  const ok = loaded.filter((item) => item.image);
+  if (ok.length) return ok;
+
   try {
-    return await loadImage(FALLBACK_GAME_PATH);
+    const fallback = await loadImage(FALLBACK_GAME_PATH);
+    return [{ image: fallback, game: games[0] || null }];
   } catch (_) {
-    return null;
+    return [];
   }
 }
 
@@ -207,9 +245,33 @@ function drawRoundedImage(ctx, image, x, y, w, h, radius = 12) {
   ctx.restore();
 }
 
+function drawGamesOverflow(ctx, x, y, h, extra) {
+  if (extra <= 0) return;
+  const label = `+${extra}`;
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  const boxW = 72;
+  const boxH = Math.min(64, h);
+  const boxY = y + (h - boxH) / 2;
+  ctx.beginPath();
+  ctx.moveTo(x + 10, boxY);
+  ctx.arcTo(x + boxW, boxY, x + boxW, boxY + boxH, 10);
+  ctx.arcTo(x + boxW, boxY + boxH, x, boxY + boxH, 10);
+  ctx.arcTo(x, boxY + boxH, x, boxY, 10);
+  ctx.arcTo(x, boxY, x + boxW, boxY, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = VALUE_COLOR;
+  ctx.font = fontCss();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, x + boxW / 2, boxY + boxH / 2);
+  ctx.restore();
+}
+
 /**
  * Карточка «Новый лог» по макету Figma node 427:33.
- * Поля: лимит, баланс, инвентарь, уровень, последний актив + иконка игры.
+ * Поля: лимит, баланс, инвентарь, уровень, последний актив + капсулы игр.
  */
 async function renderSteamLogImage(account = {}) {
   const canvas = createCanvas(WIDTH, HEIGHT);
@@ -223,9 +285,23 @@ async function renderSteamLogImage(account = {}) {
   drawValue(ctx, formatLevel(account), VALUE_SLOTS.level);
   drawValue(ctx, formatLastActive(account), VALUE_SLOTS.lastActive);
 
-  const gameImage = await loadGameImage(account);
-  if (gameImage) {
-    drawRoundedImage(ctx, gameImage, GAME_SLOT.x, GAME_SLOT.y, GAME_SLOT.w, GAME_SLOT.h, 10);
+  const allGames = listGamesForBanner(account);
+  const gameImages = await loadGameImages(account);
+  let x = GAME_SLOT.x;
+  for (const item of gameImages) {
+    if (x + GAME_SLOT.w > GAME_ROW_MAX_X) break;
+    drawRoundedImage(ctx, item.image, x, GAME_SLOT.y, GAME_SLOT.w, GAME_SLOT.h, 10);
+    x += GAME_SLOT.w + GAME_GAP;
+  }
+
+  const drawn = gameImages.length;
+  const knownTotal = Math.max(
+    Number(account?.gamesCount || account?.gameCount || 0) || 0,
+    allGames.length
+  );
+  const extra = Math.max(0, knownTotal - drawn);
+  if (extra > 0 && x + 72 <= GAME_ROW_MAX_X + 40) {
+    drawGamesOverflow(ctx, x, GAME_SLOT.y, GAME_SLOT.h, extra);
   }
 
   return canvas.toBuffer("image/png");
@@ -239,4 +315,5 @@ module.exports = {
   formatLevel,
   formatLastActive,
   pickPrimaryGame,
+  listGamesForBanner,
 };

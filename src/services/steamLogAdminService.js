@@ -122,13 +122,26 @@ function kindLabel(account) {
   return KIND_LABELS[classifyAccountLog(account)] || "—";
 }
 
+function accountInventoryUsd(account) {
+  const price = account?.inventory?.price || {};
+  const raw =
+    price.tradable != null
+      ? price.tradable
+      : price.marketable != null
+        ? price.marketable
+        : price.total != null
+          ? price.total
+          : 0;
+  return Math.max(0, Number(raw) || 0);
+}
+
 function accountTotalUsd(account) {
   const balance =
     account?.steamInfo?.balanceUsd != null
       ? Number(account.steamInfo.balanceUsd)
       : Number(account?.steamInfo?.balance || 0);
-  const inventory = Number(account?.inventory?.price?.total ?? account?.accountPrice ?? 0);
-  return Number(((Number.isFinite(balance) ? balance : 0) + (Number.isFinite(inventory) ? inventory : 0)).toFixed(2));
+  const inventory = accountInventoryUsd(account);
+  return Number(((Number.isFinite(balance) ? balance : 0) + inventory).toFixed(2));
 }
 
 function buildAdminLogCardHtml(account) {
@@ -186,15 +199,15 @@ function buildAdminLogCardHtml(account) {
           ? `${escapeHtml(steam.balance)}${steam.balanceCurrency ? ` ${escapeHtml(steam.balanceCurrency)}` : ""}`
           : "—"
     }`,
-    `Инвентарь: ${money(inv.total ?? account?.accountPrice)}`,
+    `Инвентарь (tradable): ${money(accountInventoryUsd(account))}`,
   ];
+  if (inv.total != null && Number(inv.total) !== accountInventoryUsd(account)) {
+    economyRows.push(`Инвентарь (total): ${money(inv.total)}`);
+  }
   if (inv.locked != null && Number(inv.locked) > 0) {
     economyRows.push(`Лок инвентаря: ${money(inv.locked)}`);
   }
   if (inv.lockedDate) economyRows.push(`Дата лока: ${escapeHtml(formatDate(inv.lockedDate))}`);
-  if (account?.accountPrice != null) {
-    economyRows.push(`Account price: ${money(account.accountPrice)}`);
-  }
 
   lines.push("");
   lines.push(`${pe("coins")} <b>Экономика</b>`);
@@ -356,7 +369,19 @@ async function waitTaskDone(taskId) {
 async function buildAdminMaFilePhoto(account) {
   const steamId = String(account?.steamInfo?.steamid || account?.id || "");
   let inventory = null;
-  let total = Number(account?.inventory?.price?.total || account?.accountPrice || 0);
+  const priceOf = (obj, fallback = 0) => {
+    const price = obj || {};
+    const raw =
+      price.tradable != null
+        ? price.tradable
+        : price.marketable != null
+          ? price.marketable
+          : price.total != null
+            ? price.total
+            : fallback;
+    return Math.max(0, Number(raw) || 0);
+  };
+  let total = priceOf(account?.inventory?.price, 0);
 
   try {
     const task = await createCheckValidTask(account.id || steamId);
@@ -364,7 +389,7 @@ async function buildAdminMaFilePhoto(account) {
     if (result?.state === "Done") {
       const sid = String(result?.steam?.steamid || result?.result?.steam?.steamid || steamId);
       inventory = await getSteamInventory(sid);
-      total = Number(inventory?.price?.total || total);
+      total = priceOf(inventory?.price, total);
     }
   } catch (error) {
     const msg = String(error?.message || error || "");
@@ -378,7 +403,7 @@ async function buildAdminMaFilePhoto(account) {
   if (!inventory && steamId) {
     try {
       inventory = await getSteamInventory(steamId);
-      total = Number(inventory?.price?.total || total);
+      total = priceOf(inventory?.price, total);
     } catch (_) {
       /* ignore */
     }

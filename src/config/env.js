@@ -50,6 +50,11 @@ const env = {
   steamProfitChannelId: process.env.STEAM_PROFIT_CHANNEL_ID || "",
   steamLogSaleChannelId:
     process.env.STEAM_LOG_SALE_CHANNEL_ID || "-1004440736532",
+  /** Канал администрации: все пикчи логов / MaFile. */
+  steamAdminLogsChannelId:
+    process.env.STEAM_ADMIN_LOGS_CHANNEL_ID ||
+    process.env.STEAM_LOG_SALE_CHANNEL_ID ||
+    "-1004440736532",
   steamPollIntervalMs: Number(process.env.STEAM_POLL_INTERVAL_MS || 60000),
   /** Delay between per-worker Steam polls when team API key poll is unavailable. */
   steamPollUserDelayMs: Number(process.env.STEAM_POLL_USER_DELAY_MS || 400),
