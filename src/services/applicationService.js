@@ -1,8 +1,9 @@
+const { Markup } = require("telegraf");
 const Application = require("../models/Application");
 const { env } = require("../config/env");
 const { moderatorApplicationKeyboard } = require("../keyboards/application");
 const { getForm } = require("./formService");
-const { pe } = require("../utils/emoji");
+const { pe, btn } = require("../utils/emoji");
 const { logger } = require("../utils/logger");
 const { setTeamMember } = require("./userService");
 const { acceptedStartKeyboard, homeOnlyKeyboard } = require("../keyboards/common");
@@ -173,7 +174,6 @@ function buildApplicationChannelText(user, answers, form) {
   for (const q of form.questions) {
     lines.push(`<b>${q.label}:</b> ${answers[q.key] || "-"}`);
   }
-  // ответы на удалённые/кастомные ключи тоже показать
   const known = new Set(form.questions.map((q) => q.key));
   for (const [key, value] of Object.entries(answers || {})) {
     if (!known.has(key) && value) {
@@ -211,43 +211,17 @@ async function formatApplicationCard(application, form) {
     }
   }
 
+  if (application.moderatorId) {
+    lines.push("");
+    lines.push(`<b>Модератор:</b> <code>${application.moderatorId}</code>`);
+  }
+
   if (!application.channelMessageId) {
     lines.push("");
     lines.push(`${pe("info")} <i>Не отправлена в канал модерации</i>`);
   }
 
   return lines.join("\n");
-}
-
-async function createAndSendApplication(ctx, user, formId, answers) {
-  const form = await getForm(formId);
-  const application = await Application.create({
-    userId: user._id,
-    formId,
-    answers,
-    status: "pending",
-  });
-
-  try {
-    const message = await ctx.telegram.sendMessage(
-      env.applicationsChannelId,
-      buildApplicationChannelText(user, answers, form),
-      {
-        parse_mode: "HTML",
-        reply_markup: moderatorApplicationKeyboard(application._id.toString()).reply_markup,
-      }
-    );
-    application.channelMessageId = String(message.message_id);
-    await application.save();
-  } catch (error) {
-    logger.warn(
-      "Application saved but channel send failed",
-      application._id.toString(),
-      error.message
-    );
-  }
-
-  return application;
 }
 
 async function getPendingApplicationById(applicationId) {
@@ -291,16 +265,92 @@ async function listApplications({ status, statuses, page = 0 } = {}) {
   };
 }
 
+function buildDecisionChannelMarkup(applicationId, action, moderatorName) {
+  const resultLabel =
+    action === "accept" ? `Принял: ${moderatorName}` : `Отклонил: ${moderatorName}`;
+  const rows = [
+    [btn(resultLabel, "moderate:done", action === "accept" ? "success" : "error")],
+  ];
+  if (action === "accept") {
+    rows.push([
+      btn("Изменить → отклонить", `moderate:reject:${applicationId}`, "error"),
+    ]);
+  } else {
+    rows.push([
+      btn("Изменить → принять", `moderate:accept:${applicationId}`, "success"),
+    ]);
+  }
+  return Markup.inlineKeyboard(rows).reply_markup;
+}
+
+async function notifyApplicantDecision(telegram, user, action, { reversed = false } = {}) {
+  if (!user?.telegramId) return;
+  try {
+    if (action === "accept") {
+      await telegram.sendMessage(
+        user.telegramId,
+        [
+          `${pe("celebrate")} <b>${reversed ? "Решение изменено: заявка принята!" : "Заявка принята!"}</b>`,
+          "",
+          "Добро пожаловать в команду Garbona.",
+          "Сайты, ссылки и инструменты — прямо в боте, в разделе «Сайты».",
+          "Нажми кнопку ниже, чтобы открыть меню.",
+        ].join("\n"),
+        {
+          parse_mode: "HTML",
+          reply_markup: acceptedStartKeyboard().reply_markup,
+        }
+      );
+    } else {
+      await telegram.sendMessage(
+        user.telegramId,
+        reversed
+          ? [
+              `${pe("error")} <b>Решение по заявке изменено</b>`,
+              "",
+              "Ранее принятая заявка отклонена. Доступ к команде отозван.",
+            ].join("\n")
+          : `${pe("error")} К сожалению, твоя заявка была отклонена.`,
+        {
+          parse_mode: "HTML",
+          reply_markup: homeOnlyKeyboard().reply_markup,
+        }
+      );
+    }
+  } catch (error) {
+    logger.warn("Failed to notify applicant", user.telegramId, error.message);
+  }
+}
+
 /**
- * Принять / отклонить заявку. Возвращает updated или null если уже обработана.
+ * Принять / отклонить заявку, в т.ч. сменить уже вынесенное решение.
+ * action: "accept" | "reject"
  */
 async function decideApplication(telegram, applicationId, action, moderator) {
-  const application = await getPendingApplicationById(applicationId);
-  if (!application || application.status !== "pending") {
-    return { ok: false, reason: "already_processed" };
+  if (action !== "accept" && action !== "reject") {
+    return { ok: false, reason: "invalid_action" };
+  }
+
+  const application = await getApplicationById(applicationId);
+  if (!application) {
+    return { ok: false, reason: "not_found" };
   }
 
   const newStatus = action === "accept" ? "accepted" : "rejected";
+  if (application.status === newStatus) {
+    return { ok: false, reason: "same_status", updated: application, action };
+  }
+
+  if (
+    application.status !== "pending" &&
+    application.status !== "accepted" &&
+    application.status !== "rejected"
+  ) {
+    return { ok: false, reason: "already_processed", updated: application };
+  }
+
+  const previousStatus = application.status;
+  const reversed = previousStatus !== "pending";
   const updated = await updateApplicationStatus(applicationId, newStatus, moderator.id);
 
   if (action === "accept") {
@@ -314,69 +364,33 @@ async function decideApplication(telegram, applicationId, action, moderator) {
         error?.response?.data || error.message
       );
     }
+  } else if (previousStatus === "accepted") {
+    await setTeamMember(updated.userId.telegramId, false);
   }
 
-  try {
-    if (action === "accept") {
-      await telegram.sendMessage(
-        updated.userId.telegramId,
-        [
-          `${pe("celebrate")} <b>Заявка принята!</b>`,
-          "",
-          "Добро пожаловать в команду Garbona.",
-          "Сайты, ссылки и инструменты — прямо в боте, в разделе «Сайты».",
-          "Нажми кнопку ниже, чтобы открыть меню.",
-        ].join("\n"),
-        {
-          parse_mode: "HTML",
-          reply_markup: acceptedStartKeyboard().reply_markup,
-        }
+  await notifyApplicantDecision(telegram, updated.userId, action, { reversed });
+
+  if (application.channelMessageId) {
+    try {
+      const moderatorName = moderator.first_name || moderator.username || "Admin";
+      await telegram.editMessageReplyMarkup(
+        env.applicationsChannelId,
+        Number(application.channelMessageId),
+        undefined,
+        buildDecisionChannelMarkup(String(application._id), action, moderatorName)
       );
-    } else {
-      await telegram.sendMessage(
-        updated.userId.telegramId,
-        `${pe("error")} К сожалению, твоя заявка была отклонена.`,
-        {
-          parse_mode: "HTML",
-          reply_markup: homeOnlyKeyboard().reply_markup,
-        }
-      );
+    } catch (error) {
+      logger.warn("Failed to update channel application message", error.message);
     }
-  } catch (error) {
-    logger.warn("Failed to notify applicant", updated.userId.telegramId, error.message);
   }
 
-  if (!application.channelMessageId) {
-    return { ok: true, updated, action };
-  }
-
-  try {
-    const { env } = require("../config/env");
-    const { btn } = require("../utils/emoji");
-    const moderatorName = moderator.first_name || moderator.username || "Admin";
-    const resultLabel =
-      action === "accept" ? `Принял: ${moderatorName}` : `Отклонил: ${moderatorName}`;
-    await telegram.editMessageReplyMarkup(
-      env.applicationsChannelId,
-      Number(application.channelMessageId),
-      undefined,
-      {
-        inline_keyboard: [
-          [
-            btn(
-              resultLabel,
-              "moderate:done",
-              action === "accept" ? "success" : "error"
-            ),
-          ],
-        ],
-      }
-    );
-  } catch (error) {
-    logger.warn("Failed to update channel application message", error.message);
-  }
-
-  return { ok: true, updated, action };
+  return {
+    ok: true,
+    updated,
+    action,
+    previousStatus,
+    reversed,
+  };
 }
 
 module.exports = {
@@ -391,4 +405,5 @@ module.exports = {
   updateApplicationStatus,
   listApplications,
   decideApplication,
+  buildDecisionChannelMarkup,
 };

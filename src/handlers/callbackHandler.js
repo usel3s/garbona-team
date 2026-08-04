@@ -64,17 +64,19 @@ const {
   calcPayoutBreakdown,
 } = require("../services/withdrawalService");
 const {
-  getApplicationById,
-  listApplications,
   decideApplication,
   formatApplicationCard,
+  getApplicationById,
   getApplicationSubmitGate,
+  listApplications,
+  buildDecisionChannelMarkup,
 } = require("../services/applicationService");
 const { getForm, removeFormQuestion } = require("../services/formService");
 const {
   adminAppsHubKeyboard,
   adminAppsListKeyboard,
   adminAppViewKeyboard,
+  adminAppRejectConfirmKeyboard,
   adminQuestionsKeyboard,
   adminQuestionDeleteConfirmKeyboard,
 } = require("../keyboards/application");
@@ -2061,17 +2063,69 @@ function registerCallbackHandlers(bot) {
     await renderAdminAppView(ctx, id, kind, page);
   });
 
+  bot.action(/^admin:apps:reject:ask:([a-f0-9]{24})$/i, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const id = ctx.match[1];
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("error")} <b>Изменить решение?</b>`,
+        "",
+        "Заявка будет отклонена, пользователь будет исключён из команды.",
+      ].join("\n"),
+      { reply_markup: adminAppRejectConfirmKeyboard(id, `admin:apps:view:closed:0:${id}`).reply_markup }
+    );
+  });
+
+  bot.action(/^admin:apps:reject:confirm:([a-f0-9]{24})$/i, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const id = ctx.match[1];
+    const result = await decideApplication(ctx.telegram, id, "reject", ctx.from);
+    if (!result.ok) {
+      const msg =
+        result.reason === "same_status"
+          ? "Уже отклонена"
+          : result.reason === "not_found"
+            ? "Заявка не найдена"
+            : "Не удалось изменить решение";
+      await ctx.answerCbQuery(msg, { show_alert: true });
+      await renderAdminAppView(ctx, id, "closed", 0);
+      return;
+    }
+    await ctx.answerCbQuery(
+      result.reversed ? "Решение изменено: отклонена" : "Заявка отклонена"
+    );
+    await renderAdminAppView(ctx, id, "closed", 0);
+  });
+
   bot.action(/^admin:apps:(accept|reject):([a-f0-9]{24})$/i, async (ctx) => {
     if (!requireAdmin(ctx)) return;
     const action = ctx.match[1];
     const id = ctx.match[2];
     const result = await decideApplication(ctx.telegram, id, action, ctx.from);
     if (!result.ok) {
-      await ctx.answerCbQuery("Заявка уже обработана", { show_alert: true });
+      const msg =
+        result.reason === "same_status"
+          ? action === "accept"
+            ? "Уже принята"
+            : "Уже отклонена"
+          : result.reason === "not_found"
+            ? "Заявка не найдена"
+            : "Не удалось обработать заявку";
+      await ctx.answerCbQuery(msg, { show_alert: true });
       await renderAdminAppView(ctx, id, "closed", 0);
       return;
     }
-    await ctx.answerCbQuery(action === "accept" ? "Заявка принята" : "Заявка отклонена");
+    const toast =
+      action === "accept"
+        ? result.reversed
+          ? "Решение изменено: принята"
+          : "Заявка принята"
+        : result.reversed
+          ? "Решение изменено: отклонена"
+          : "Заявка отклонена";
+    await ctx.answerCbQuery(toast);
     await renderAdminAppView(ctx, id, "closed", 0);
   });
 
@@ -2124,33 +2178,34 @@ function registerCallbackHandlers(bot) {
     const applicationId = ctx.match[2];
     const result = await decideApplication(ctx.telegram, applicationId, action, ctx.from);
     if (!result.ok) {
-      await ctx.answerCbQuery("Заявка уже обработана", { show_alert: true });
+      const msg =
+        result.reason === "same_status"
+          ? action === "accept"
+            ? "Уже принята"
+            : "Уже отклонена"
+          : result.reason === "not_found"
+            ? "Заявка не найдена"
+            : "Не удалось обработать";
+      await ctx.answerCbQuery(msg, { show_alert: true });
       return;
     }
 
     const moderatorName = ctx.from.first_name || ctx.from.username || "Admin";
-    const resultLabel =
-      action === "accept"
-        ? `Принял: ${moderatorName}`
-        : `Отклонил: ${moderatorName}`;
-
     try {
-      await ctx.editMessageReplyMarkup({
-        inline_keyboard: [
-          [
-            btn(
-              resultLabel,
-              "moderate:done",
-              action === "accept" ? "success" : "error"
-            ),
-          ],
-        ],
-      });
+      await ctx.editMessageReplyMarkup(
+        buildDecisionChannelMarkup(applicationId, action, moderatorName)
+      );
     } catch (_) {
       /* ignore */
     }
     await ctx.answerCbQuery(
-      action === "accept" ? "Заявка принята" : "Заявка отклонена"
+      action === "accept"
+        ? result.reversed
+          ? "Решение изменено: принята"
+          : "Заявка принята"
+        : result.reversed
+          ? "Решение изменено: отклонена"
+          : "Заявка отклонена"
     );
   });
 

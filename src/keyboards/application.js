@@ -74,9 +74,26 @@ function adminAppViewKeyboard(applicationId, status, backCallback = "admin:apps"
       btn("Принять", `admin:apps:accept:${applicationId}`, "success"),
       btn("Отклонить", `admin:apps:reject:${applicationId}`, "error"),
     ]);
+  } else if (status === "rejected") {
+    rows.push([
+      btn("Изменить → принять", `admin:apps:accept:${applicationId}`, "success"),
+    ]);
+  } else if (status === "accepted") {
+    rows.push([
+      btn("Изменить → отклонить", `admin:apps:reject:ask:${applicationId}`, "error"),
+    ]);
   }
   rows.push([btn("Назад", backCallback, "home")]);
   return Markup.inlineKeyboard(rows);
+}
+
+function adminAppRejectConfirmKeyboard(applicationId, backCallback = "admin:apps") {
+  return Markup.inlineKeyboard([
+    [
+      btn("Да, отклонить", `admin:apps:reject:confirm:${applicationId}`, "error"),
+      btn("Отмена", backCallback, "home"),
+    ],
+  ]);
 }
 
 function adminQuestionsKeyboard(questions) {
@@ -105,6 +122,7 @@ module.exports = {
   adminAppsHubKeyboard,
   adminAppsListKeyboard,
   adminAppViewKeyboard,
+  adminAppRejectConfirmKeyboard,
   adminQuestionsKeyboard,
   adminQuestionDeleteConfirmKeyboard,
 };

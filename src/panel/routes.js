@@ -570,9 +570,21 @@ function createPanelRouter(bot) {
         username: req.admin?.username || "",
       });
       if (!decided?.ok) {
-        return res.status(400).json({ error: decided?.reason || "decide_failed" });
+        const reason = decided?.reason || "decide_failed";
+        const messages = {
+          same_status: "Заявка уже в этом статусе",
+          not_found: "Заявка не найдена",
+          invalid_action: "Некорректное действие",
+          already_processed: "Заявку нельзя обработать",
+        };
+        return res.status(400).json({ error: messages[reason] || reason, reason });
       }
-      res.json({ ok: true, application: serializeApplication(decided.updated) });
+      res.json({
+        ok: true,
+        reversed: Boolean(decided.reversed),
+        previousStatus: decided.previousStatus || "",
+        application: serializeApplication(decided.updated),
+      });
     } catch (error) {
       res.status(400).json({ error: error.message });
     }

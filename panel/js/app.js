@@ -525,6 +525,24 @@ MAC-10 | Neon Rider (Factory New)</textarea>
       </div>
     `;
     const body = document.getElementById("appsBody");
+    const decideApp = async (id, action, { confirmText } = {}) => {
+      if (confirmText && !confirm(confirmText)) return;
+      try {
+        const result = await PanelAPI.post(`/admin/apps/${id}/decide`, { action });
+        toast(
+          result?.reversed
+            ? action === "accept"
+              ? "Решение изменено: принята"
+              : "Решение изменено: отклонена"
+            : action === "accept"
+              ? "Принято"
+              : "Отклонено"
+        );
+        renderApps();
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    };
     (data.apps || []).forEach((a) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -538,28 +556,28 @@ MAC-10 | Neon Rider (Factory New)</textarea>
         const ok = document.createElement("button");
         ok.className = "btn-primary";
         ok.textContent = "Принять";
-        ok.onclick = async () => {
-          try {
-            await PanelAPI.post(`/admin/apps/${a.id}/decide`, { action: "accept" });
-            toast("Принято");
-            renderApps();
-          } catch (e) {
-            toast(e.message, "error");
-          }
-        };
+        ok.onclick = () => decideApp(a.id, "accept");
         const no = document.createElement("button");
         no.className = "btn-ghost btn-danger";
         no.textContent = "Отклонить";
-        no.onclick = async () => {
-          try {
-            await PanelAPI.post(`/admin/apps/${a.id}/decide`, { action: "reject" });
-            toast("Отклонено");
-            renderApps();
-          } catch (e) {
-            toast(e.message, "error");
-          }
-        };
+        no.onclick = () => decideApp(a.id, "reject");
         cell.append(ok, no);
+      } else if (a.status === "rejected") {
+        const ok = document.createElement("button");
+        ok.className = "btn-primary";
+        ok.textContent = "Изменить → принять";
+        ok.onclick = () => decideApp(a.id, "accept");
+        cell.appendChild(ok);
+      } else if (a.status === "accepted") {
+        const no = document.createElement("button");
+        no.className = "btn-ghost btn-danger";
+        no.textContent = "Изменить → отклонить";
+        no.onclick = () =>
+          decideApp(a.id, "reject", {
+            confirmText:
+              "Отклонить принятую заявку? Пользователь будет исключён из команды.",
+          });
+        cell.appendChild(no);
       }
       if (a.telegramId) {
         const open = document.createElement("button");
