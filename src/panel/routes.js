@@ -60,6 +60,9 @@ const {
   disableTemplateById,
   createLink,
   listWorkers,
+  listTeamReferrals,
+  updateTeamReferral,
+  deleteTeamReferral,
 } = require("../services/adminSitesService");
 const { updateCuratorSettings } = require("../services/curatorService");
 const { updateCallerSettings } = require("../services/callerService");
@@ -871,6 +874,44 @@ function createPanelRouter(bot) {
   router.get("/admin/sites/workers", requireAdmin, async (req, res) => {
     try {
       res.json(await listWorkers(req.admin));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.get("/admin/sites/referrals", requireAdmin, async (req, res) => {
+    try {
+      res.json(await listTeamReferrals(req.admin));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.patch("/admin/sites/referrals/:telegramId/:domainId", requireAdmin, async (req, res) => {
+    try {
+      res.json(
+        await updateTeamReferral(
+          req.admin,
+          { telegramId: req.params.telegramId, domainId: req.params.domainId },
+          {
+            templateId: req.body?.templateId,
+            windowType: req.body?.windowType,
+          }
+        )
+      );
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.delete("/admin/sites/referrals/:telegramId/:domainId", requireAdmin, async (req, res) => {
+    try {
+      res.json(
+        await deleteTeamReferral(req.admin, {
+          telegramId: req.params.telegramId,
+          domainId: req.params.domainId,
+        })
+      );
     } catch (error) {
       res.status(error.status || 400).json({ error: error.message });
     }

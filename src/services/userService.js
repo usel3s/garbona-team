@@ -323,6 +323,32 @@ async function clearTeamReferralForDomain(telegramId, domainId) {
   return user;
 }
 
+/** Все рефералки воркеров из Mongo. */
+async function listTeamReferralsFromDb() {
+  const users = await User.find({ "teamReferrals.0": { $exists: true } })
+    .select("telegramId username customId panelUsername teamReferrals")
+    .lean();
+  const items = [];
+  for (const user of users) {
+    for (const ref of user.teamReferrals || []) {
+      items.push({
+        telegramId: String(user.telegramId),
+        username: user.username || "",
+        customId: user.customId || "",
+        panelUsername: user.panelUsername || "",
+        domainId: Number(ref.domainId),
+        path: String(ref.path || ""),
+        panelLinkId: ref.panelLinkId != null ? Number(ref.panelLinkId) : null,
+      });
+    }
+  }
+  items.sort((a, b) => {
+    if (a.domainId !== b.domainId) return a.domainId - b.domainId;
+    return String(a.username).localeCompare(String(b.username));
+  });
+  return items;
+}
+
 module.exports = {
   ensureUser,
   isAdminTelegramId,
@@ -350,4 +376,5 @@ module.exports = {
   getTeamReferralForDomain,
   upsertTeamReferral,
   clearTeamReferralForDomain,
+  listTeamReferralsFromDb,
 };

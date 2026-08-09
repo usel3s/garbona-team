@@ -117,7 +117,17 @@ function referralLinkKeyboard(domainId) {
       btn("Шаблон", `sites:ref:template:${domainId}`, "file"),
       btn("Окно входа", `sites:ref:window:${domainId}`, "visible"),
     ],
+    [btn("Удалить ссылку", `sites:ref:delete:ask:${domainId}`, "delete")],
     [btn("Назад", `sites:domain:${domainId}`, "home")],
+  ]);
+}
+
+function referralDeleteConfirmKeyboard(domainId) {
+  return Markup.inlineKeyboard([
+    [
+      btn("Да, удалить", `sites:ref:delete:ok:${domainId}`, "error"),
+      btn("Отмена", `sites:ref:back:${domainId}`, "home"),
+    ],
   ]);
 }
 
@@ -176,4 +186,5 @@ module.exports = {
   referralParamsKeyboard,
   referralWindowKeyboard,
   referralTemplatesKeyboard,
+  referralDeleteConfirmKeyboard,
 };

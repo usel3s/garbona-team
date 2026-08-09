@@ -298,6 +298,30 @@ async function updateSteamLink(token, domainId, linkId, patch) {
   invalidateDomainCaches(token);
   return data;
 }
+
+/**
+ * Uproject не отдаёт DELETE для ссылок — «удаляем» сменой path + очисткой Mongo.
+ */
+async function deleteSteamLink(token, domainId, linkId, { windowType } = {}) {
+  const tombstone = `deleted_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  return updateSteamLink(token, domainId, linkId, {
+    path: tombstone,
+    windowType: normalizeWindowType(windowType || "FakeWindow"),
+    randPath: false,
+  });
+}
+
+/** Домены команды через x-api-key (без cookie воркера). */
+async function getTeamDomains(offset = 0, limit = 50) {
+  const key = `team:domains:${offset}:${limit}`;
+  return panelDataCache.getOrSet(
+    key,
+    async () =>
+      (await withPanelRetry(() => baseClient.get("/domains", { params: { offset, limit } }))).data,
+    CACHE_TTL.domains
+  );
+}
+
 async function getTeamWorkers(token, offset = 0, limit = 100) {
   const key = `${cacheScope(token)}:workers:${offset}:${limit}`;
   return panelDataCache.getOrSet(
@@ -339,6 +363,8 @@ module.exports = {
   findTemplateById,
   createSteamLink,
   updateSteamLink,
+  deleteSteamLink,
+  getTeamDomains,
   normalizeWindowType,
   getTeamWorkers,
   formatPanelError,

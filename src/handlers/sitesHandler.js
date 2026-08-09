@@ -9,6 +9,7 @@ const {
   getSteamLinks,
   createSteamLink,
   updateSteamLink,
+  deleteSteamLink,
   normalizeWindowType,
   getTeamWorkers,
   formatPanelError,
@@ -42,6 +43,7 @@ const {
   referralParamsKeyboard,
   referralWindowKeyboard,
   referralTemplatesKeyboard,
+  referralDeleteConfirmKeyboard,
 } = require("../keyboards/sites");
 
 function filterAvailableDomains(rows = [], accountId) {
@@ -723,6 +725,72 @@ function registerSitesHandlers(bot) {
       const user = await ensureUser(ctx.from);
       const auth = await resolvePanelAuth(ctx, user);
       await showReferral(ctx, user, domainId, auth, { force: true });
+    } catch (error) {
+      await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`);
+    }
+  });
+
+  bot.action(/^sites:ref:delete:ask:(\d+)$/, async (ctx) => {
+    const domainId = Number(ctx.match[1]);
+    await ctx.answerCbQuery();
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("delete")} <b>Удалить реферальную ссылку?</b>`,
+        "",
+        "Ссылка перестанет работать. Новую можно создать снова кнопкой «Реферальная ссылка».",
+      ].join("\n"),
+      { reply_markup: referralDeleteConfirmKeyboard(domainId).reply_markup }
+    );
+  });
+
+  bot.action(/^sites:ref:delete:ok:(\d+)$/, async (ctx) => {
+    const domainId = Number(ctx.match[1]);
+    await ctx.answerCbQuery("Удаляю…");
+    try {
+      const user = await ensureUser(ctx.from);
+      const auth = await resolvePanelAuth(ctx, user);
+      const existing = await getTeamReferralForDomain(user.telegramId, domainId);
+      if (!existing) {
+        clearReferralCache(ctx);
+        await upsertBotMessage(
+          ctx,
+          `${pe("info")} Реферальной ссылки нет.`,
+          {
+            reply_markup: {
+              inline_keyboard: [[btn("К домену", `sites:domain:${domainId}`, "home")]],
+            },
+          }
+        );
+        return;
+      }
+
+      if (existing.panelLinkId) {
+        try {
+          let windowType = "FakeWindow";
+          const panelLink = await findWorkerPanelLink(auth.token, domainId, existing);
+          if (panelLink?.windowType) windowType = panelLink.windowType;
+          await deleteSteamLink(auth.token, domainId, existing.panelLinkId, { windowType });
+        } catch (_) {
+          // Mongo всё равно очистим — ссылку можно пересоздать.
+        }
+      }
+
+      await clearTeamReferralForDomain(user.telegramId, domainId);
+      clearReferralCache(ctx);
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("success")} <b>Реферальная ссылка удалена</b>`,
+          "",
+          "Чтобы создать новую — откройте домен и нажмите «Реферальная ссылка».",
+        ].join("\n"),
+        {
+          reply_markup: {
+            inline_keyboard: [[btn("К домену", `sites:domain:${domainId}`, "home")]],
+          },
+        }
+      );
     } catch (error) {
       await upsertBotMessage(ctx, `${pe("error")} ${formatPanelError(error)}`);
     }
