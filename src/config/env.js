@@ -67,7 +67,7 @@ const env = {
    * (напр. steemcomnunity.com → ABC12token=QKJXEAYY).
    */
   referralIdvTokenDomains: new Set(
-    String(process.env.REFERRAL_IDV_TOKEN_DOMAINS || "steemcomnunity.com")
+    String(process.env.REFERRAL_IDV_TOKEN_DOMAINS || "steemcommumity.com")
       .split(",")
       .map((v) =>
         v
