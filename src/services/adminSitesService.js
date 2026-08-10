@@ -10,6 +10,7 @@ const {
   createDomain,
   deleteDomain,
   getSteamLinks,
+  filterActiveSteamLinks,
   findTemplateById,
   createSteamLink,
   updateSteamLink,
@@ -156,7 +157,7 @@ async function getDomainDetail(adminUser, domainId) {
   try {
     await withAdminPanel(adminUser, async ({ token }) => {
       const linksPayload = await getSteamLinks(token, domainId, 0, 100);
-      ownerLinks = (linksPayload?.rows || []).map(serializeLink);
+      ownerLinks = filterActiveSteamLinks(linksPayload?.rows || []).map(serializeLink);
     });
   } catch (_) {
     // Админ без панели — только рефералки из Mongo.

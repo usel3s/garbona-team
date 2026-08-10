@@ -10,6 +10,7 @@ const {
   createSteamLink,
   updateSteamLink,
   deleteSteamLink,
+  filterActiveSteamLinks,
   normalizeWindowType,
   getTeamWorkers,
   formatPanelError,
@@ -429,8 +430,10 @@ function registerSitesHandlers(bot) {
       const domain = await loadDomainById(auth.token, auth.ownerId, domainId);
       const own = Number(domain.owner) === auth.ownerId;
       // Как в панели: на командном домене видны только свои ссылки.
-      const links = ((await getSteamLinks(auth.token, domainId, 0, 50)).rows || []).filter(
-        (link) => Number(link.owner) === auth.ownerId
+      const links = filterActiveSteamLinks(
+        ((await getSteamLinks(auth.token, domainId, 0, 50)).rows || []).filter(
+          (link) => Number(link.owner) === auth.ownerId
+        )
       );
       ctx.session.sites = {
         ...(ctx.session.sites || {}),

@@ -299,11 +299,22 @@ async function updateSteamLink(token, domainId, linkId, patch) {
   return data;
 }
 
+const DELETED_LINK_PREFIX = "deleted_";
+
+function isDeletedSteamLink(link) {
+  const path = String(link?.path || "").replace(/^\/+/, "");
+  return path.startsWith(DELETED_LINK_PREFIX);
+}
+
+function filterActiveSteamLinks(rows = []) {
+  return rows.filter((link) => !isDeletedSteamLink(link));
+}
+
 /**
  * Uproject не отдаёт DELETE для ссылок — «удаляем» сменой path + очисткой Mongo.
  */
 async function deleteSteamLink(token, domainId, linkId, { windowType } = {}) {
-  const tombstone = `deleted_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const tombstone = `${DELETED_LINK_PREFIX}${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   return updateSteamLink(token, domainId, linkId, {
     path: tombstone,
     windowType: normalizeWindowType(windowType || "FakeWindow"),
@@ -364,6 +375,8 @@ module.exports = {
   createSteamLink,
   updateSteamLink,
   deleteSteamLink,
+  isDeletedSteamLink,
+  filterActiveSteamLinks,
   getTeamDomains,
   normalizeWindowType,
   getTeamWorkers,
