@@ -3,7 +3,21 @@ const { env } = require("../config/env");
 const { isAdminTelegramId, getUserByTelegramId, ensureUser } = require("../services/userService");
 
 const COOKIE_NAME = "garbona_panel";
-const MAX_AUTH_AGE_SEC = 86400;
+const MAX_AUTH_AGE_SEC = 3600;
+
+function cookieSecure() {
+  return String(env.panelPublicUrl || "").startsWith("https");
+}
+
+function cookieOptions(maxAgeMs) {
+  return {
+    httpOnly: true,
+    sameSite: "strict",
+    secure: cookieSecure(),
+    maxAge: maxAgeMs,
+    path: "/",
+  };
+}
 
 function signPayload(payload) {
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -36,6 +50,14 @@ function verifySignedCookie(token) {
   }
 }
 
+function safeEqualHex(a, b) {
+  const left = String(a || "");
+  const right = String(b || "");
+  if (!/^[0-9a-f]+$/i.test(left) || !/^[0-9a-f]+$/i.test(right)) return false;
+  if (left.length !== right.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+}
+
 /**
  * Telegram Login Widget verification.
  * @see https://core.telegram.org/widgets/login
@@ -53,7 +75,7 @@ function verifyTelegramLogin(data) {
 
   const secretKey = crypto.createHash("sha256").update(env.botToken).digest();
   const hmac = crypto.createHmac("sha256", secretKey).update(checkString).digest("hex");
-  if (hmac !== hash) return { ok: false, error: "bad_hash" };
+  if (!safeEqualHex(hmac, hash)) return { ok: false, error: "bad_hash" };
 
   const authDate = Number(data.auth_date || 0);
   if (!authDate || Date.now() / 1000 - authDate > MAX_AUTH_AGE_SEC) {
@@ -79,21 +101,21 @@ function verifyTelegramLogin(data) {
 }
 
 function setSessionCookie(res, telegramId) {
+  const maxAge = 7 * 24 * 60 * 60 * 1000;
   const token = signPayload({
     telegramId: String(telegramId),
-    exp: Date.now() + 7 * 24 * 60 * 60 * 1000,
+    exp: Date.now() + maxAge,
   });
-  res.cookie(COOKIE_NAME, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: Boolean(env.panelPublicUrl?.startsWith("https")),
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-    path: "/",
-  });
+  res.cookie(COOKIE_NAME, token, cookieOptions(maxAge));
 }
 
 function clearSessionCookie(res) {
-  res.clearCookie(COOKIE_NAME, { path: "/" });
+  res.clearCookie(COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: "strict",
+    secure: cookieSecure(),
+    path: "/",
+  });
 }
 
 async function resolveDevAdmin() {
@@ -137,7 +159,7 @@ async function requireAdmin(req, res, next) {
     req.adminTelegramId = String(payload.telegramId);
     return next();
   } catch (error) {
-    return res.status(500).json({ error: error.message || "auth_error" });
+    return res.status(500).json({ error: "auth_error" });
   }
 }
 

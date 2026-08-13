@@ -53,7 +53,7 @@ window.PanelMember = (function () {
         <dt>Роль</dt><dd>${m.role}</dd>
         <dt>Кошелёк</dt><dd>${m.walletDisplay}</dd>
         <dt>Процент</dt><dd>${m.profitPercent}%</dd>
-        <dt>Панель</dt><dd>${m.panelUsername ? `<code>${m.panelUsername}:${m.panelPassword || "—"}</code>` : "не создан"}</dd>
+        <dt>Панель</dt><dd>${m.panelUsername ? `<code>${m.panelUsername}${m.panelPassword ? `:${m.panelPassword}` : m.hasPanelPassword ? ":••••••••" : ""}</code>` : "не создан"}</dd>
         <dt>Статус</dt><dd>${m.isBanned ? "Бан" : m.isTeamMember ? "В команде" : "Вне команды"}</dd>
       </dl>
 

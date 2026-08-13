@@ -275,7 +275,12 @@ async function listDomains(user, options = {}) {
     }
 
     let rows = payload?.rows || [];
-    if (ownerId != null) {
+    if (ownerId == null) {
+      // Без аккаунта панели сайтов не отдаём полный team dump.
+      rows = (payload?.rows || []).filter(
+        (row) => row?.isPublic === true || row?.isTeamPublic === true
+      );
+    } else {
       rows = filterAvailableDomains(rows, ownerId);
     }
 

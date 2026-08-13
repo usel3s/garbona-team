@@ -92,7 +92,7 @@ function createPanelRouter(bot) {
     res.json({
       botUsername: env.botUsername || bot?.botInfo?.username || "",
       botId,
-      authDisabled: Boolean(env.panelAuthDisabled),
+      authDisabled: false,
     });
   });
 
@@ -265,7 +265,7 @@ function createPanelRouter(bot) {
       const user = await getUserByTelegramId(req.params.telegramId);
       if (!user) return res.status(404).json({ error: "not_found" });
       const currencyCtx = await getCurrencyContext();
-      res.json({ member: serializeMember(user, currencyCtx) });
+      res.json({ member: serializeMember(user, currencyCtx, { includePanelSecrets: true }) });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -411,7 +411,7 @@ function createPanelRouter(bot) {
       if (!user) return res.status(404).json({ error: "not_found" });
       user = await ensureWorkerPanelAccount(user);
       const currencyCtx = await getCurrencyContext();
-      res.json({ ok: true, member: serializeMember(user, currencyCtx) });
+      res.json({ ok: true, member: serializeMember(user, currencyCtx, { includePanelSecrets: true }) });
     } catch (error) {
       res.status(400).json({ error: error.message });
     }
@@ -423,7 +423,7 @@ function createPanelRouter(bot) {
       if (!user) return res.status(404).json({ error: "not_found" });
       user = await recreateWorkerPanelAccount(user);
       const currencyCtx = await getCurrencyContext();
-      res.json({ ok: true, member: serializeMember(user, currencyCtx) });
+      res.json({ ok: true, member: serializeMember(user, currencyCtx, { includePanelSecrets: true }) });
     } catch (error) {
       res.status(400).json({ error: error.message });
     }
@@ -437,7 +437,7 @@ function createPanelRouter(bot) {
       const password = String(req.body?.password || "").trim();
       user = await bindWorkerPanelAccount(user, login, password);
       const currencyCtx = await getCurrencyContext();
-      res.json({ ok: true, member: serializeMember(user, currencyCtx) });
+      res.json({ ok: true, member: serializeMember(user, currencyCtx, { includePanelSecrets: true }) });
     } catch (error) {
       res.status(400).json({ error: error.message });
     }

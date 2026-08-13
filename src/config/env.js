@@ -82,10 +82,9 @@ const env = {
   /** Вставка между customId и случайной частью (по умолчанию token=). */
   referralIdvTokenPrefix: String(process.env.REFERRAL_IDV_TOKEN_PREFIX || "token="),
   referralIdvTokenLength: Number(process.env.REFERRAL_IDV_TOKEN_LENGTH || 16),
-  // PORT — platform inject (production). PANEL_PORT — local override.
-  panelPort: Number(process.env.PANEL_PORT || process.env.PORT || 8787),
-  panelCookieSecret:
-    process.env.PANEL_COOKIE_SECRET || process.env.BOT_TOKEN || "garbona-panel-dev",
+  // PORT / PANEL_PORT — bothost и локально (оба хоста: админка `/` + воркер `/app`).
+  panelPort: Number(process.env.PANEL_PORT || process.env.PORT || 3000),
+  panelCookieSecret: String(process.env.PANEL_COOKIE_SECRET || "").trim(),
   panelPublicUrl: String(process.env.PANEL_PUBLIC_URL || "").replace(/\/$/, ""),
   botUsername: String(process.env.BOT_USERNAME || "").replace(/^@/, ""),
   /** Temporary: skip Telegram Login / session checks for local panel access. */
@@ -101,6 +100,25 @@ function validateEnv() {
   const missing = required.filter((key) => !env[key]);
   if (missing.length > 0) {
     throw new Error(`Missing required env vars: ${missing.join(", ")}`);
+  }
+
+  if (!env.panelCookieSecret || env.panelCookieSecret.length < 32) {
+    throw new Error(
+      "PANEL_COOKIE_SECRET must be set to a random string of at least 32 characters (do not reuse BOT_TOKEN)"
+    );
+  }
+
+  if (env.panelAuthDisabled) {
+    const publicUrl = String(env.panelPublicUrl || "");
+    const looksPublic =
+      publicUrl.startsWith("https://") ||
+      /bothost\.tech|garbona\./i.test(publicUrl) ||
+      process.env.NODE_ENV === "production";
+    if (looksPublic) {
+      throw new Error(
+        "PANEL_AUTH_DISABLED cannot be enabled on a public/production panel URL"
+      );
+    }
   }
 }
 

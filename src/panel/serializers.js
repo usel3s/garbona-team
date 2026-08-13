@@ -1,9 +1,10 @@
 const { formatDisplayAmount, getCurrencyContext } = require("../services/currencyService");
 
-function serializeMember(user, currencyCtx) {
+function serializeMember(user, currencyCtx, options = {}) {
   if (!user) return null;
   const walletUsd = Number(user.totalProfit || 0);
-  return {
+  const includePanelSecrets = options.includePanelSecrets === true;
+  const out = {
     telegramId: String(user.telegramId),
     customId: user.customId || "",
     username: user.username || "",
@@ -26,11 +27,15 @@ function serializeMember(user, currencyCtx) {
     walletUsd,
     walletDisplay: formatDisplayAmount(walletUsd, currencyCtx),
     panelUsername: user.panelUsername || "",
-    panelPassword: user.panelPassword || "",
+    hasPanelPassword: Boolean(user.panelPassword),
     bio: user.bio || "",
     isAnonymous: Boolean(user.isAnonymous),
     createdAt: user.createdAt || null,
   };
+  if (includePanelSecrets) {
+    out.panelPassword = user.panelPassword || "";
+  }
+  return out;
 }
 
 function serializeApplication(app) {

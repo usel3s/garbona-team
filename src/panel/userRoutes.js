@@ -68,7 +68,7 @@ function createUserRouter(bot) {
     res.json({
       botUsername: env.botUsername || "",
       botId,
-      authDisabled: Boolean(env.panelAuthDisabled),
+      authDisabled: false,
       supportUrl: env.supportUrl || "",
       manualsDocsUrl: env.manualsDocsUrl || "",
       changelogsUrl: env.changelogsUrl || "",

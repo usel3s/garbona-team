@@ -111,7 +111,7 @@ async function assertOwnedLog(worker, sourceId) {
   if (!id) throw asError("source_id_required");
 
   const steamLog = await SteamLog.findOne({ sourceId: id });
-  if (steamLog && String(steamLog.ownerTelegramId) !== String(worker.telegramId)) {
+  if (!steamLog || String(steamLog.ownerTelegramId) !== String(worker.telegramId)) {
     throw asError("Это не ваш лог", 403);
   }
   return { id, steamLog };
