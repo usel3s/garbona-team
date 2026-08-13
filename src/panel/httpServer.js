@@ -9,7 +9,6 @@ const { createUserRouter } = require("./userRoutes");
 function startPanelServer(bot) {
   const app = express();
   const panelRoot = path.resolve(__dirname, "../../panel");
-  const appRoot = path.resolve(panelRoot, "app");
   const workerRoot = path.resolve(panelRoot, "worker");
 
   app.disable("x-powered-by");
@@ -20,18 +19,20 @@ function startPanelServer(bot) {
   app.use("/api/user", createUserRouter(bot));
   app.use("/api", createPanelRouter(bot));
 
-  app.use("/app", express.static(appRoot, { index: false, extensions: ["html"] }));
+  // Worker App (бывший v2) — основной интерфейс воркера
+  app.use("/app", express.static(workerRoot, { index: false, extensions: ["html"] }));
   app.get(["/app", "/app/"], (_req, res) => {
     res.redirect("/app/index.html");
   });
-
-  app.use("/worker", express.static(workerRoot, { index: false, extensions: ["html"] }));
-  app.get(["/worker", "/worker/"], (_req, res) => {
-    res.redirect("/worker/index.html");
-  });
-  app.use("/worker", (req, res, next) => {
+  app.use("/app", (req, res, next) => {
     if (req.method !== "GET" && req.method !== "HEAD") return next();
     res.status(404).sendFile(path.join(workerRoot, "404.html"));
+  });
+
+  // Старый URL /worker → /app
+  app.use("/worker", (req, res) => {
+    const suffix = req.url && req.url !== "/" ? req.url : "/";
+    res.redirect(301, `/app${suffix}`);
   });
 
   // HTML/JS панели — без долгого кэша, чтобы админка сразу подхватывала обновления UI.
@@ -42,6 +43,7 @@ function startPanelServer(bot) {
     next();
   });
 
+  // Админ-панель (panel/*) — не трогаем
   app.use(express.static(panelRoot, { index: false, extensions: ["html"] }));
 
   app.get("/", (_req, res) => {
@@ -55,13 +57,14 @@ function startPanelServer(bot) {
     }
     res.status(404).sendFile(path.join(workerRoot, "404.html"));
   });
+
   const port = Number(env.panelPort) || 8787;
   const host = "0.0.0.0";
   const server = app.listen(port, host, () => {
     const publicUrl = env.panelPublicUrl || `http://127.0.0.1:${port}`;
     logger.info(`Panel server listening on http://${host}:${port} → ${publicUrl}`);
+    logger.info(`Admin panel: ${publicUrl}/`);
     logger.info(`Worker app: ${publicUrl}/app/`);
-    logger.info(`Worker panel v2: ${publicUrl}/worker/`);
   });
 
   return server;
