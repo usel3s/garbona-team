@@ -5,6 +5,7 @@ window.WorkerPrefs = (function () {
     theme: "dark",
     currency: "USD",
     defaultPeriod: 7,
+    sidebarCollapsed: false,
   };
 
   let state = { ...DEFAULTS };
@@ -21,6 +22,9 @@ window.WorkerPrefs = (function () {
       if (parsed.currency === "USD" || parsed.currency === "RUB") state.currency = parsed.currency;
       const period = Number(parsed.defaultPeriod);
       if ([7, 14, 30].includes(period)) state.defaultPeriod = period;
+      if (typeof parsed.sidebarCollapsed === "boolean") {
+        state.sidebarCollapsed = parsed.sidebarCollapsed;
+      }
     } catch (_) {}
   }
 
@@ -31,6 +35,7 @@ window.WorkerPrefs = (function () {
   function applyDom() {
     document.documentElement.lang = state.lang;
     document.documentElement.dataset.theme = state.theme;
+    document.documentElement.dataset.sidebar = state.sidebarCollapsed ? "collapsed" : "expanded";
     const themeColor = state.theme === "light" ? "#f5f5f5" : "#090909";
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themeColor);
   }
@@ -46,9 +51,11 @@ window.WorkerPrefs = (function () {
 
   function set(partial) {
     let changed = false;
+    const keys = [];
     if (partial.lang && (partial.lang === "ru" || partial.lang === "en") && partial.lang !== state.lang) {
       state.lang = partial.lang;
       changed = true;
+      keys.push("lang");
     }
     if (
       partial.theme &&
@@ -57,6 +64,7 @@ window.WorkerPrefs = (function () {
     ) {
       state.theme = partial.theme;
       changed = true;
+      keys.push("theme");
     }
     if (
       partial.currency &&
@@ -65,19 +73,33 @@ window.WorkerPrefs = (function () {
     ) {
       state.currency = partial.currency;
       changed = true;
+      keys.push("currency");
     }
     if (partial.defaultPeriod != null) {
       const period = Number(partial.defaultPeriod);
       if ([7, 14, 30].includes(period) && period !== state.defaultPeriod) {
         state.defaultPeriod = period;
         changed = true;
+        keys.push("defaultPeriod");
       }
+    }
+    if (
+      typeof partial.sidebarCollapsed === "boolean" &&
+      partial.sidebarCollapsed !== state.sidebarCollapsed
+    ) {
+      state.sidebarCollapsed = partial.sidebarCollapsed;
+      changed = true;
+      keys.push("sidebarCollapsed");
     }
     if (!changed) return false;
     save();
     applyDom();
-    listeners.forEach((fn) => fn(get()));
+    listeners.forEach((fn) => fn(get(), { keys }));
     return true;
+  }
+
+  function toggleSidebarCollapsed() {
+    return set({ sidebarCollapsed: !state.sidebarCollapsed });
   }
 
   function toggleLang() {
@@ -110,6 +132,7 @@ window.WorkerPrefs = (function () {
     toggleLang,
     toggleTheme,
     toggleCurrency,
+    toggleSidebarCollapsed,
     onChange,
   };
 })();

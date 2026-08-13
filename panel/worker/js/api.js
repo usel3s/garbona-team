@@ -45,14 +45,20 @@ window.WorkerAPI = (function () {
     });
 
     let data = null;
+    let rawText = "";
     try {
-      data = await res.json();
+      rawText = await res.text();
+      data = rawText ? JSON.parse(rawText) : null;
     } catch (_) {
       data = null;
     }
 
     if (!res.ok) {
-      const err = new Error(data?.error || `HTTP ${res.status}`);
+      const fallback =
+        /cannot\s+get|cannot\s+post/i.test(rawText)
+          ? `Cannot ${method} ${path}`
+          : `HTTP ${res.status}`;
+      const err = new Error(data?.error || fallback);
       err.status = res.status;
       err.data = data;
       throw err;

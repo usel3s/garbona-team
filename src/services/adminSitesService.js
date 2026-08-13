@@ -35,6 +35,7 @@ const {
   normalizeTemplateId,
 } = require("./settingsService");
 const { logger } = require("../utils/logger");
+const { mergeDeviceCounts } = require("../utils/referral");
 
 function pickActualIp(ips) {
   if (Array.isArray(ips)) return ips[0] || "";
@@ -49,6 +50,28 @@ function sumStatCounts(stats = []) {
     out[action] = (out[action] || 0) + (Number(row?.count) || 0);
   }
   return out;
+}
+
+function mergeCountryCounts(stats = []) {
+  const out = {};
+  for (const row of Array.isArray(stats) ? stats : []) {
+    const countries = row?.countries || row?.countryCounts || null;
+    if (!countries || typeof countries !== "object" || Array.isArray(countries)) continue;
+    for (const [code, count] of Object.entries(countries)) {
+      const key = String(code || "").trim().toUpperCase();
+      if (!key) continue;
+      out[key] = (out[key] || 0) + (Number(count) || 0);
+    }
+  }
+  return out;
+}
+
+function serializeCountMap(map, limit = 12) {
+  return Object.entries(map || {})
+    .map(([name, count]) => ({ name, count: Number(count) || 0 }))
+    .filter((row) => row.name && row.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
 }
 
 function serializeDomainStats(stats) {
@@ -112,11 +135,30 @@ function serializeBanData(banData) {
 }
 
 function serializeDomain(domain, ownerId = null) {
+  if (!domain || typeof domain !== "object") {
+    return {
+      id: null,
+      domain: "",
+      online: 0,
+      owner: null,
+      isOwn: false,
+      isTeamPublic: false,
+      ip: "",
+      service: "Steam",
+      status: "",
+      isPaused: false,
+      createdAt: null,
+      linksCount: 0,
+      stats: serializeDomainStats([]),
+      ns: [],
+      banChecks: null,
+    };
+  }
   const own =
     ownerId != null && Number.isFinite(Number(ownerId))
-      ? Number(domain?.owner) === Number(ownerId)
-      : Boolean(domain?.isOwner);
-  const status = String(domain?.status || "");
+      ? Number(domain.owner) === Number(ownerId)
+      : Boolean(domain.isOwner);
+  const status = String(domain.status || "");
   return {
     id: domain.id,
     domain: domain.domain || "",
@@ -137,6 +179,7 @@ function serializeDomain(domain, ownerId = null) {
 }
 
 function serializeLink(link, domainPaused = false) {
+  if (!link || typeof link !== "object") return null;
   const template = link.template;
   const templateId =
     template && typeof template === "object"
@@ -148,6 +191,7 @@ function serializeLink(link, domainPaused = false) {
     "";
   const steam = link.steam && typeof link.steam === "object" ? link.steam : {};
   const linkStatus = String(link.status || "").toLowerCase();
+  const rawStats = Array.isArray(link.stats) ? link.stats : [];
   return {
     id: link.id,
     path: link.path || "",
@@ -157,12 +201,14 @@ function serializeLink(link, domainPaused = false) {
     templateName,
     owner: link.owner ?? null,
     online: Number(link.online || 0),
-    stats: serializeDomainStats(link.stats),
+    stats: serializeDomainStats(rawStats),
     iframe: Boolean(link.iframe),
     cloaking: Boolean(link.cloaking),
     ban_vpn: Boolean(link.ban_vpn),
     randPath: Boolean(link.randPath),
     isPaused: domainPaused || linkStatus === "pause",
+    devices: serializeCountMap(mergeDeviceCounts(rawStats)),
+    countries: serializeCountMap(mergeCountryCounts(rawStats)),
     steam: {
       logError: (steam.logError ?? link.logError) !== false,
       tradeError: (steam.tradeError ?? link.tradeError) !== false,
@@ -206,8 +252,13 @@ async function withWorkerPanel(user, fn) {
   }
 }
 
-/** Список доменов — team key + фильтр доступных воркеру. */
-async function listDomains(user) {
+/** Список доменов — team key + фильтр доступных воркеру.
+ *  options.light — без подгрузки ссылок (для алертов)
+ *  options.includeLinks — отдать сериализованные ссылки (для аналитики одним запросом)
+ */
+async function listDomains(user, options = {}) {
+  const light = options.light === true;
+  const includeLinks = options.includeLinks === true;
   try {
     const payload = await getTeamDomains(0, 50);
     let ownerId = null;
@@ -230,7 +281,7 @@ async function listDomains(user) {
 
     let domains = rows.map((d) => serializeDomain(d, ownerId));
 
-    if (user?.panelUsername && user?.panelPassword && ownerId != null) {
+    if (!light && user?.panelUsername && user?.panelPassword && ownerId != null) {
       try {
         domains = await withWorkerPanel(user, async ({ token }) => {
           const workerId = extractOwnerIdFromToken(token) ?? ownerId;
@@ -241,11 +292,16 @@ async function listDomains(user) {
                 const myLinks = filterActiveSteamLinks(linksPayload?.rows || []).filter(
                   (link) => Number(link.owner) === Number(workerId)
                 );
+                const domainPaused = Boolean(row.isPaused);
+                const serializedLinks = myLinks
+                  .map((link) => serializeLink(link, domainPaused))
+                  .filter(Boolean);
                 return {
                   ...row,
                   linksCount: myLinks.length,
                   stats: aggregateLinkStats(myLinks),
                   online: myLinks.reduce((sum, link) => sum + Number(link.online || 0), 0),
+                  ...(includeLinks ? { links: serializedLinks } : {}),
                 };
               } catch {
                 return {
@@ -253,6 +309,7 @@ async function listDomains(user) {
                   linksCount: 0,
                   stats: serializeDomainStats([]),
                   online: 0,
+                  ...(includeLinks ? { links: [] } : {}),
                 };
               }
             })
@@ -318,7 +375,9 @@ async function getWorkerDomainDetail(user, domainId) {
       (link) => Number(link.owner) === Number(ownerId)
     );
     const workerOnline = myLinks.reduce((sum, link) => sum + Number(link.online || 0), 0);
-    const links = myLinks.map((link) => serializeLink(link, domainPaused));
+    const links = myLinks
+      .map((link) => serializeLink(link, domainPaused))
+      .filter(Boolean);
 
     return {
       ownerId,
@@ -348,9 +407,9 @@ async function getDomainDetail(adminUser, domainId) {
   try {
     await withAdminPanel(adminUser, async ({ token }) => {
       const linksPayload = await getSteamLinks(token, domainId, 0, 100);
-      ownerLinks = filterActiveSteamLinks(linksPayload?.rows || []).map((link) =>
-        serializeLink(link, isDomainPaused(domain))
-      );
+      ownerLinks = filterActiveSteamLinks(linksPayload?.rows || [])
+        .map((link) => serializeLink(link, isDomainPaused(domain)))
+        .filter(Boolean);
     });
   } catch (_) {
     // Админ без панели — только рефералки из Mongo.

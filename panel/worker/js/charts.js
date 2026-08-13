@@ -39,13 +39,6 @@ window.WorkerCharts = (function () {
     return out;
   }
 
-  function polylinePoints(values, xAt, yAt) {
-    if (!values.length) return "";
-    return values
-      .map((v, i) => `${xAt(i).toFixed(2)},${yAt(v).toFixed(2)}`)
-      .join(" ");
-  }
-
   function xLabelStep(count, plotWidth, minLabelPx = 46) {
     if (count <= 1) return 1;
     const maxLabels = Math.max(2, Math.floor(plotWidth / minLabelPx));
@@ -59,6 +52,47 @@ window.WorkerCharts = (function () {
     for (let i = 0; i < count; i += step) indices.push(i);
     if (indices[indices.length - 1] !== count - 1) indices.push(count - 1);
     return indices;
+  }
+
+  function toPoints(values, xAt, yAt) {
+    return values.map((v, i) => ({ x: xAt(i), y: yAt(v) }));
+  }
+
+  /** Catmull-Rom → cubic Bezier with mild tension and Y clamp (no sharp corners / less overshoot). */
+  function smoothLinePath(points, { tension = 0.28, yMin = -Infinity, yMax = Infinity } = {}) {
+    if (!points.length) return "";
+    if (points.length === 1) {
+      return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+    }
+    if (points.length === 2) {
+      return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)} L ${points[1].x.toFixed(2)} ${points[1].y.toFixed(2)}`;
+    }
+
+    const clampY = (y) => Math.min(yMax, Math.max(yMin, y));
+    let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const p0 = points[i - 1] || points[i];
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const p3 = points[i + 2] || p2;
+
+      const cp1x = p1.x + (p2.x - p0.x) * tension;
+      const cp1y = clampY(p1.y + (p2.y - p0.y) * tension);
+      const cp2x = p2.x - (p3.x - p1.x) * tension;
+      const cp2y = clampY(p2.y - (p3.y - p1.y) * tension);
+
+      d += ` C ${cp1x.toFixed(2)} ${cp1y.toFixed(2)}, ${cp2x.toFixed(2)} ${cp2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+    }
+    return d;
+  }
+
+  function smoothAreaPath(points, baselineY, options) {
+    const line = smoothLinePath(points, options);
+    if (!line || !points.length) return "";
+    const first = points[0];
+    const last = points[points.length - 1];
+    return `${line} L ${last.x.toFixed(2)} ${baselineY.toFixed(2)} L ${first.x.toFixed(2)} ${baselineY.toFixed(2)} Z`;
   }
 
   function renderDynamicsChart(container, points, options = {}) {
@@ -94,8 +128,8 @@ window.WorkerCharts = (function () {
     const amountScale = buildTicks(Math.max(...profitAmounts, 0));
     const n = rows.length;
 
-    const pad = { top: 12, right: 44, bottom: 28, left: 28 };
-    const H = 220;
+    const pad = { top: 16, right: 48, bottom: 30, left: 32 };
+    const H = 240;
 
     let showLogs = true;
     let showMafile = true;
@@ -103,6 +137,8 @@ window.WorkerCharts = (function () {
     let logsLine;
     let mafileLine;
     let profitLine;
+    let profitArea;
+    let logsArea;
     let dots;
     let tip;
     let wrap;
@@ -129,7 +165,8 @@ window.WorkerCharts = (function () {
       const plotH = H - pad.top - pad.bottom;
       const labelStep = xLabelStep(n, plotW);
       const labelIndices = xLabelIndices(n, labelStep);
-      const gridIndices = labelStep > 1 ? labelIndices : rows.map((_, i) => i);
+      const baselineY = pad.top + plotH;
+      const curveOpts = { tension: 0.28, yMin: pad.top, yMax: baselineY };
 
       const xAt = (i) => pad.left + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
       const yCount = (v) => pad.top + plotH - (v / countScale.max) * plotH;
@@ -145,6 +182,23 @@ window.WorkerCharts = (function () {
         svg.setAttribute("preserveAspectRatio", "none");
         svg.setAttribute("width", "100%");
         svg.setAttribute("height", String(H));
+
+        const defs = document.createElementNS(svgNS, "defs");
+        defs.innerHTML = `
+          <linearGradient id="dynamicsProfitFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#f2f2f2" stop-opacity="0.18"/>
+            <stop offset="100%" stop-color="#f2f2f2" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="dynamicsLogsFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#7a7a7a" stop-opacity="0.14"/>
+            <stop offset="100%" stop-color="#7a7a7a" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="dynamicsProfitFillLight" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#222222" stop-opacity="0.12"/>
+            <stop offset="100%" stop-color="#222222" stop-opacity="0"/>
+          </linearGradient>
+        `;
+        svg.appendChild(defs);
 
         const grid = document.createElementNS(svgNS, "g");
         grid.setAttribute("class", "dynamics-grid");
@@ -166,17 +220,25 @@ window.WorkerCharts = (function () {
         xLabels.setAttribute("class", "dynamics-x-labels");
         svg.appendChild(xLabels);
 
-        logsLine = document.createElementNS(svgNS, "polyline");
+        profitArea = document.createElementNS(svgNS, "path");
+        profitArea.setAttribute("class", "dynamics-area dynamics-area-profit");
+        svg.appendChild(profitArea);
+
+        logsArea = document.createElementNS(svgNS, "path");
+        logsArea.setAttribute("class", "dynamics-area dynamics-area-logs");
+        svg.appendChild(logsArea);
+
+        logsLine = document.createElementNS(svgNS, "path");
         logsLine.setAttribute("class", "dynamics-line dynamics-line-logs");
         logsLine.setAttribute("fill", "none");
         svg.appendChild(logsLine);
 
-        mafileLine = document.createElementNS(svgNS, "polyline");
+        mafileLine = document.createElementNS(svgNS, "path");
         mafileLine.setAttribute("class", "dynamics-line dynamics-line-mafile");
         mafileLine.setAttribute("fill", "none");
         svg.appendChild(mafileLine);
 
-        profitLine = document.createElementNS(svgNS, "polyline");
+        profitLine = document.createElementNS(svgNS, "path");
         profitLine.setAttribute("class", "dynamics-line dynamics-line-profit");
         profitLine.setAttribute("fill", "none");
         svg.appendChild(profitLine);
@@ -242,21 +304,21 @@ window.WorkerCharts = (function () {
 
       const grid = svg.querySelector(".dynamics-grid");
       grid.innerHTML = "";
-      gridIndices.forEach((i) => {
-        const x = xAt(i);
+      countScale.ticks.forEach((tick) => {
+        const y = yCount(tick);
         const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        line.setAttribute("x1", x);
-        line.setAttribute("x2", x);
-        line.setAttribute("y1", pad.top);
-        line.setAttribute("y2", pad.top + plotH);
+        line.setAttribute("x1", pad.left);
+        line.setAttribute("x2", pad.left + plotW);
+        line.setAttribute("y1", y);
+        line.setAttribute("y2", y);
         grid.appendChild(line);
       });
 
       const baseline = svg.querySelector(".dynamics-axis-line");
       baseline.setAttribute("x1", pad.left);
       baseline.setAttribute("x2", pad.left + plotW);
-      baseline.setAttribute("y1", pad.top + plotH);
-      baseline.setAttribute("y2", pad.top + plotH);
+      baseline.setAttribute("y1", baselineY);
+      baseline.setAttribute("y2", baselineY);
 
       const leftAxis = svg.querySelector(".dynamics-axis-left");
       leftAxis.innerHTML = "";
@@ -296,9 +358,15 @@ window.WorkerCharts = (function () {
         xLabels.appendChild(label);
       });
 
-      logsLine.setAttribute("points", polylinePoints(logsCounts, xAt, yCount));
-      mafileLine.setAttribute("points", polylinePoints(mafileCounts, xAt, yCount));
-      profitLine.setAttribute("points", polylinePoints(profitAmounts, xAt, yAmount));
+      const logsPts = toPoints(logsCounts, xAt, yCount);
+      const mafilePts = toPoints(mafileCounts, xAt, yCount);
+      const profitPts = toPoints(profitAmounts, xAt, yAmount);
+
+      logsLine.setAttribute("d", smoothLinePath(logsPts, curveOpts));
+      mafileLine.setAttribute("d", smoothLinePath(mafilePts, curveOpts));
+      profitLine.setAttribute("d", smoothLinePath(profitPts, curveOpts));
+      logsArea.setAttribute("d", smoothAreaPath(logsPts, baselineY, curveOpts));
+      profitArea.setAttribute("d", smoothAreaPath(profitPts, baselineY, curveOpts));
 
       dots.innerHTML = "";
       rows.forEach((row, i) => {
@@ -315,25 +383,33 @@ window.WorkerCharts = (function () {
         hit.setAttribute("class", "dynamics-hit");
         g.appendChild(hit);
 
+        const guide = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        guide.setAttribute("class", "dynamics-guide");
+        guide.setAttribute("x1", xAt(i));
+        guide.setAttribute("x2", xAt(i));
+        guide.setAttribute("y1", pad.top);
+        guide.setAttribute("y2", baselineY);
+        g.appendChild(guide);
+
         const cLogs = document.createElementNS("http://www.w3.org/2000/svg", "circle");
         cLogs.setAttribute("class", "dynamics-dot dynamics-dot-logs");
         cLogs.setAttribute("cx", xAt(i));
         cLogs.setAttribute("cy", yCount(logsCounts[i]));
-        cLogs.setAttribute("r", 3.5);
+        cLogs.setAttribute("r", 4);
         g.appendChild(cLogs);
 
         const cMafile = document.createElementNS("http://www.w3.org/2000/svg", "circle");
         cMafile.setAttribute("class", "dynamics-dot dynamics-dot-mafile");
         cMafile.setAttribute("cx", xAt(i));
         cMafile.setAttribute("cy", yCount(mafileCounts[i]));
-        cMafile.setAttribute("r", 3.5);
+        cMafile.setAttribute("r", 4);
         g.appendChild(cMafile);
 
         const cProfit = document.createElementNS("http://www.w3.org/2000/svg", "circle");
         cProfit.setAttribute("class", "dynamics-dot dynamics-dot-profit");
         cProfit.setAttribute("cx", xAt(i));
         cProfit.setAttribute("cy", yAmount(profitAmounts[i]));
-        cProfit.setAttribute("r", 3.5);
+        cProfit.setAttribute("r", 4);
         g.appendChild(cProfit);
 
         g.addEventListener("mouseenter", (e) => showTip(Number(g.dataset.index), e.clientX));
@@ -351,8 +427,10 @@ window.WorkerCharts = (function () {
     function applyVisibility() {
       if (!logsLine || !mafileLine || !profitLine || !dots) return;
       logsLine.style.display = showLogs ? "" : "none";
+      logsArea.style.display = showLogs ? "" : "none";
       mafileLine.style.display = showMafile ? "" : "none";
       profitLine.style.display = showProfit ? "" : "none";
+      profitArea.style.display = showProfit ? "" : "none";
       dots.querySelectorAll(".dynamics-dot-logs").forEach((el) => {
         el.style.display = showLogs ? "" : "none";
       });
@@ -379,7 +457,7 @@ window.WorkerCharts = (function () {
       const rect = wrap.getBoundingClientRect();
       const x = clientX - rect.left;
       tip.style.left = `${Math.max(72, Math.min(rect.width - 72, x))}px`;
-      tip.style.top = "24px";
+      tip.style.top = "20px";
     }
 
     requestAnimationFrame(() => requestAnimationFrame(scheduleDraw));

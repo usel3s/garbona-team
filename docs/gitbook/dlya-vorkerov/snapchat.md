@@ -1,4 +1,4 @@
----
+﻿---
 description: Snapchat Spotlight — ГЕО, регистрация, теги, прогрев и воронка через чат.
 ---
 
@@ -18,7 +18,7 @@ Snapchat — относительно лояльный источник с бо�
 * Пул почт для регистраций.
 * Установка Snapchat через Play Market под VPN или проверенный APK.
 
-См. [device setup](device-setup.md).
+См. [device setup](podgotovka-ustroistva.md).
 {% endstep %}
 
 {% step %}
@@ -58,6 +58,6 @@ Snapchat — относительно лояльный источник с бо�
 {% endstep %}
 {% endstepper %}
 
-{% content-ref url="hooks.md" %}
-[Хуки](hooks.md)
+{% content-ref url="khuki.md" %}
+[Хуки](khuki.md)
 {% endcontent-ref %}

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#090909" />
+    <title>Страница не найдена - Garbona</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/worker.css" />
+    <link rel="stylesheet" href="css/panel-extra.css" />
+    <link rel="icon" href="../assets/logo.png" type="image/png" />
+  </head>
+  <body>
+    <div class="empty-state empty-state-page">
+      <div class="empty-state-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="8.25" stroke="currentColor" stroke-width="1.5" />
+          <circle cx="12" cy="12" r="2.2" stroke="currentColor" stroke-width="1.5" />
+          <path d="M12 3.75v2.2M12 18.05v2.2M3.75 12h2.2M18.05 12h2.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          <path d="m14.2 9.8 2.1-2.1M7.7 16.3l2.1-2.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        </svg>
+      </div>
+      <h1 class="empty-state-title" data-i18n="notFound.title">Страница не найдена</h1>
+      <p class="empty-state-text" data-i18n="notFound.text">
+        Возможно, ссылка устарела или была введена с опечаткой. Вернитесь на главную и попробуйте ещё раз.
+      </p>
+      <div class="empty-state-actions">
+        <button type="button" class="btn btn-ghost" id="notFoundBack" data-i18n="common.back">Назад</button>
+        <a class="btn btn-primary" href="index.html" data-i18n="notFound.home">На главную</a>
+      </div>
+    </div>
+    <script src="js/prefs.js"></script>
+    <script src="js/i18n.js"></script>
+    <script>
+      (function () {
+        WorkerPrefs.init();
+        WorkerI18n.apply(document);
+        document.title = `${WorkerI18n.t("notFound.title")} - ${WorkerI18n.t("brand.name")}`;
+        document.getElementById("notFoundBack")?.addEventListener("click", () => {
+          if (history.length > 1) history.back();
+          else location.replace("index.html");
+        });
+      })();
+    </script>
+  </body>
+</html>

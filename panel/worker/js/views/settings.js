@@ -26,6 +26,15 @@ WorkerViews.settings = async function renderSettings(ctx) {
           </div>
           <div class="settings-form">
             <div class="settings-field">
+              <label class="settings-label">${WorkerI18n.t("settings.avatar")}</label>
+              <div class="settings-avatar-row">
+                <img class="settings-avatar" id="settingsAvatar" src="../assets/logo.png" alt="" />
+                <div class="settings-avatar-actions">
+                  <p class="settings-hint">${WorkerI18n.t("settings.avatarHint")}</p>
+                </div>
+              </div>
+            </div>
+            <div class="settings-field">
               <label class="settings-label" for="settingsLogin">${WorkerI18n.t("settings.login")}</label>
               <input class="input" id="settingsLogin" type="text" readonly />
               <p class="settings-hint">${WorkerI18n.t("settings.loginHint")}</p>
@@ -251,6 +260,25 @@ async function loadSettingsData(root, user) {
   const u = data.user || user;
   const login = u.username || u.appLogin || u.telegramId || "—";
   const telegram = u.username ? `@${u.username}` : u.telegramId || "—";
+
+  const avatarEl = document.getElementById("settingsAvatar");
+  if (avatarEl) {
+    const photo = String(u.photoUrl || "").trim();
+    const username = String(u.username || "")
+      .trim()
+      .replace(/^@/, "");
+    const fallback =
+      /^https?:\/\//i.test(photo)
+        ? photo
+        : /^[A-Za-z0-9_]{5,32}$/.test(username)
+          ? `https://t.me/i/userpic/320/${username}.jpg`
+          : "../assets/logo.png";
+    avatarEl.onerror = () => {
+      avatarEl.onerror = null;
+      avatarEl.src = "../assets/logo.png";
+    };
+    avatarEl.src = fallback;
+  }
 
   const loginEl = document.getElementById("settingsLogin");
   if (loginEl) loginEl.value = login;

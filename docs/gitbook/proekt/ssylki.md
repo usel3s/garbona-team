@@ -1,4 +1,4 @@
----
+﻿---
 description: Официальные каналы, контакты администрации и доступы внутри бота.
 ---
 
@@ -29,18 +29,18 @@ description: Официальные каналы, контакты админи�
 
 ## Быстрые переходы
 
-{% content-ref url="about.md" %}
-[О команде](about.md)
+{% content-ref url="o-komande.md" %}
+[О команде](o-komande.md)
 {% endcontent-ref %}
 
-{% content-ref url="rules.md" %}
-[Правила](rules.md)
+{% content-ref url="pravila.md" %}
+[Правила](pravila.md)
 {% endcontent-ref %}
 
-{% content-ref url="../bot/application.md" %}
-[Старт и заявка](../bot/application.md)
+{% content-ref url="../funkcional-bota/zayavka.md" %}
+[Старт и заявка](../funkcional-bota/zayavka.md)
 {% endcontent-ref %}
 
-{% content-ref url="../for-workers/device-setup.md" %}
-[Подготовка устройства](../for-workers/device-setup.md)
+{% content-ref url="../dlya-vorkerov/podgotovka-ustroistva.md" %}
+[Подготовка устройства](../dlya-vorkerov/podgotovka-ustroistva.md)
 {% endcontent-ref %}

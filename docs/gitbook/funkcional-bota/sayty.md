@@ -1,4 +1,4 @@
----
+﻿---
 description: Домены, реферальные ссылки, шаблоны и параметры — полный гайд по разделу «Сайты» в боте.
 ---
 
@@ -264,10 +264,10 @@ promo  →  50cent.me/promo
        → список ссылок → клик = редактирование
 ```
 
-{% content-ref url="wallet.md" %}
-[Профиль и кошелёк](wallet.md)
+{% content-ref url="koshelek.md" %}
+[Профиль и кошелёк](koshelek.md)
 {% endcontent-ref %}
 
-{% content-ref url="../project/rules.md" %}
-[Правила](../project/rules.md)
+{% content-ref url="../proekt/pravila.md" %}
+[Правила](../proekt/pravila.md)
 {% endcontent-ref %}

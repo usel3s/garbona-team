@@ -29,6 +29,10 @@ function startPanelServer(bot) {
   app.get(["/worker", "/worker/"], (_req, res) => {
     res.redirect("/worker/index.html");
   });
+  app.use("/worker", (req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    res.status(404).sendFile(path.join(workerRoot, "404.html"));
+  });
 
   // HTML/JS панели — без долгого кэша, чтобы админка сразу подхватывала обновления UI.
   app.use((req, res, next) => {
@@ -44,6 +48,13 @@ function startPanelServer(bot) {
     res.redirect("/index.html");
   });
 
+  app.use((req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    if (req.path.startsWith("/api")) {
+      return res.status(404).json({ error: "not_found" });
+    }
+    res.status(404).sendFile(path.join(workerRoot, "404.html"));
+  });
   const port = Number(env.panelPort) || 8787;
   const host = "0.0.0.0";
   const server = app.listen(port, host, () => {

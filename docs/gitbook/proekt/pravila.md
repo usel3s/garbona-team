@@ -1,4 +1,4 @@
----
+﻿---
 description: Обязательные правила участия в Garbona — запреты, логи, MaFile, выплаты и обратная связь.
 ---
 
@@ -45,12 +45,12 @@ description: Обязательные правила участия в Garbona �
 * За вывод средств с панели может взиматься комиссия (комиссия маркета и пр.).
 * Баланс, заявки и статусы — в боте.
 
-{% content-ref url="../bot/wallet.md" %}
-[Профиль и кошелёк](../bot/wallet.md)
+{% content-ref url="../funkcional-bota/koshelek.md" %}
+[Профиль и кошелёк](../funkcional-bota/koshelek.md)
 {% endcontent-ref %}
 
-{% content-ref url="../bot/payouts.md" %}
-[Профиты и выплаты](../bot/payouts.md)
+{% content-ref url="../funkcional-bota/vyplaty.md" %}
+[Профиты и выплаты](../funkcional-bota/vyplaty.md)
 {% endcontent-ref %}
 
 ## Обратная связь и изменения соглашения

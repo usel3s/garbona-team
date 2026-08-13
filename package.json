@@ -6,6 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
+    "panel": "node src/panelOnly.js",
     "dev": "nodemon src/index.js",
     "pm2:start": "pm2 start ecosystem.config.cjs",
     "pm2:reload": "pm2 reload ecosystem.config.cjs",

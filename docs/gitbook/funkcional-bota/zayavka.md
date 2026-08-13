@@ -1,4 +1,4 @@
----
+﻿---
 description: Как подать заявку в команду Garbona через Telegram-бота.
 ---
 
@@ -7,7 +7,7 @@ description: Как подать заявку в команду Garbona чере
 Как попасть в команду через бота **Garbona**.
 
 {% hint style="info" %}
-Перед заявкой обязательно примите [правила](../project/rules.md). Без согласия заявка не принимается.
+Перед заявкой обязательно примите [правила](../proekt/pravila.md). Без согласия заявка не принимается.
 {% endhint %}
 
 ## Пошагово
@@ -40,10 +40,10 @@ description: Как подать заявку в команду Garbona чере
 
 ## Чеклист перед отправкой
 
-* [ ] Прочитал [правила](../project/rules.md)
+* [ ] Прочитал [правила](../proekt/pravila.md)
 * [ ] Указал реальные источники трафика
 * [ ] Не спамил админам «когда примут?»
-* [ ] Готов к работе по [мануалам](../for-workers/device-setup.md)
+* [ ] Готов к работе по [мануалам](../dlya-vorkerov/podgotovka-ustroistva.md)
 
 {% hint style="warning" %}
 Не пишите в общий чат «когда примут?». Статус и вопросы — только в личку [@karma_ceo](https://t.me/karma_ceo).
@@ -55,13 +55,13 @@ description: Как подать заявку в команду Garbona чере
 {% tab title="Первые шаги" %}
 1. Откройте **О проекте** в боте.
 2. Зайдите в чат воркеров и канал выплат.
-3. Подготовьте устройство — [device setup](../for-workers/device-setup.md).
-4. Создайте рефералку — [sites](sites.md).
+3. Подготовьте устройство — [device setup](../dlya-vorkerov/podgotovka-ustroistva.md).
+4. Создайте рефералку — [sites](sayty.md).
 {% endtab %}
 
 {% tab title="Деньги" %}
-* Как копятся профиты — [payouts](payouts.md)
-* Как выводить — [wallet](wallet.md)
+* Как копятся профиты — [payouts](vyplaty.md)
+* Как выводить — [wallet](koshelek.md)
 {% endtab %}
 {% endtabs %}
 
@@ -72,6 +72,6 @@ description: Как подать заявку в команду Garbona чере
 
 </details>
 
-{% content-ref url="sites.md" %}
-[Сайты и реферальные ссылки](sites.md)
+{% content-ref url="sayty.md" %}
+[Сайты и реферальные ссылки](sayty.md)
 {% endcontent-ref %}

@@ -347,7 +347,9 @@ function isDeletedSteamLink(link) {
 }
 
 function filterActiveSteamLinks(rows = []) {
-  return rows.filter((link) => !isDeletedSteamLink(link));
+  return (Array.isArray(rows) ? rows : []).filter(
+    (link) => link && typeof link === "object" && !isDeletedSteamLink(link)
+  );
 }
 
 /**

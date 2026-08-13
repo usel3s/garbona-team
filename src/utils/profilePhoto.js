@@ -91,12 +91,10 @@ async function getProfileThumbnail(telegram, user) {
     }
   }
 
-  const username = String(user?.username || "")
-    .trim()
-    .replace(/^@/, "");
-  if (username) {
+  const fallback = telegramUserpicUrl(user?.username);
+  if (fallback) {
     return {
-      url: `https://t.me/i/userpic/320/${username}.jpg`,
+      url: fallback,
       width: 320,
       height: 320,
     };
@@ -105,7 +103,31 @@ async function getProfileThumbnail(telegram, user) {
   return null;
 }
 
+/**
+ * Публичный URL аватарки для панели.
+ * Приоритет: сохранённый avatarUrl → photo_url из Login → t.me/i/userpic по username.
+ */
+function resolveWorkerPhotoUrl(user, { loginPhotoUrl = "" } = {}) {
+  const stored = String(user?.avatarUrl || "").trim();
+  if (/^https?:\/\//i.test(stored)) return stored;
+
+  const fromLogin = String(loginPhotoUrl || "").trim();
+  if (/^https?:\/\//i.test(fromLogin)) return fromLogin;
+
+  return telegramUserpicUrl(user?.username) || "";
+}
+
+function telegramUserpicUrl(username) {
+  const clean = String(username || "")
+    .trim()
+    .replace(/^@/, "");
+  if (!/^[A-Za-z0-9_]{5,32}$/.test(clean)) return "";
+  return `https://t.me/i/userpic/320/${clean}.jpg`;
+}
+
 module.exports = {
   getProfilePhotoFileId,
   getProfileThumbnail,
+  resolveWorkerPhotoUrl,
+  telegramUserpicUrl,
 };

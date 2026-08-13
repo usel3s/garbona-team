@@ -20,18 +20,18 @@
   const VIEWS = {
     dashboard: WorkerViews.dashboard,
     sites: WorkerViews.sites,
+    analytics: WorkerViews.analytics,
+    top: WorkerViews.top,
     settings: WorkerViews.settings,
-    team: WorkerViews.team,
     wallet: WorkerViews.wallet,
     support: WorkerViews.support,
   };
 
   const VIEW_TITLE_KEYS = {
     dashboard: "nav.dashboard",
-    logs: "nav.logs",
     sites: "nav.sites",
-    tasks: "nav.tasks",
-    team: "nav.team",
+    analytics: "nav.analytics",
+    top: "nav.top",
     wallet: "nav.wallet",
     settings: "nav.settings",
     support: "nav.support",
@@ -61,22 +61,26 @@
   }
 
   function avatarUrl() {
-    return user.photoUrl || "../assets/logo.png";
+    const photo = String(user.photoUrl || "").trim();
+    if (/^https?:\/\//i.test(photo)) return photo;
+    const username = String(user.username || "")
+      .trim()
+      .replace(/^@/, "");
+    if (/^[A-Za-z0-9_]{5,32}$/.test(username)) {
+      return `https://t.me/i/userpic/320/${username}.jpg`;
+    }
+    return "../assets/logo.png";
   }
 
   function statsLine() {
-    const pct = user.profitPercent ?? 80;
     const { currency } = WorkerPrefs.get();
     const usd = Number(user.walletUsd || 0);
-    let amount;
     if (currency === "RUB") {
       const value = WorkerFormat.convertUsd(usd);
       const locale = WorkerPrefs.get().lang === "ru" ? "ru-RU" : "en-US";
-      amount = `${value.toLocaleString(locale)} ₽`;
-    } else {
-      amount = `${usd.toFixed(2)} $`;
+      return `${value.toLocaleString(locale)} ₽`;
     }
-    return `${amount} · ${pct}%`;
+    return `${usd.toFixed(2)} $`;
   }
 
   function updateUserHeader() {
@@ -87,7 +91,14 @@
     statsEl.textContent = statsLine();
 
     const img = document.getElementById("userAvatar");
-    if (img) img.src = avatar;
+    if (img) {
+      img.onerror = () => {
+        img.onerror = null;
+        img.src = "../assets/logo.png";
+      };
+      img.src = avatar;
+    }
+    if (profileTrigger) profileTrigger.dataset.tip = name;
   }
 
   function setProfileMenuOpen(open) {
@@ -95,7 +106,10 @@
     profileMenu.hidden = !open;
     profileTrigger?.setAttribute("aria-expanded", String(open));
     profileTrigger?.classList.toggle("is-open", open);
+    if (open && window.WorkerNotifMenu) WorkerNotifMenu.setOpen(false);
   }
+
+  window.closeWorkerProfileMenu = () => setProfileMenuOpen(false);
 
   function setSidebarOpen(open) {
     sidebar.classList.toggle("is-open", open);
@@ -108,7 +122,6 @@
     document.querySelectorAll(".nav-item[data-view]").forEach((el) => {
       el.classList.toggle("is-active", el.dataset.view === viewId);
     });
-    document.getElementById("sidebarSettings")?.classList.toggle("is-active", viewId === "settings");
   }
 
   function bindHelpLink(id, url) {
@@ -124,9 +137,10 @@
   }
 
   function setupHelpLinks() {
-    bindHelpLink("sidebarGettingStarted", panelConfig.manualsDocsUrl || panelConfig.aboutInfoChannelUrl);
-    bindHelpLink("sidebarUpdates", panelConfig.changelogsUrl);
-    bindHelpLink("sidebarSupport", panelConfig.supportUrl);
+    bindHelpLink(
+      "profileGettingStarted",
+      panelConfig.manualsDocsUrl || panelConfig.aboutInfoChannelUrl
+    );
   }
 
   function openSettings(tab) {
@@ -164,23 +178,71 @@
     try {
       await VIEWS[viewId]({ main, user, refresh });
     } catch (error) {
+      if (window.WorkerToast) WorkerToast.error(error);
       main.innerHTML = `
         <div class="section">
           <div class="empty">
             <div>${WorkerFormat.escapeHtml(WorkerI18n.t("common.error"))}</div>
-            <div class="muted">${WorkerFormat.escapeHtml(error.message || String(error))}</div>
+            <div class="muted">${WorkerFormat.escapeHtml(
+              (window.WorkerToast && WorkerToast.friendlyError(error)) ||
+                error.message ||
+                String(error)
+            )}</div>
           </div>
         </div>`;
     }
+  }
+
+  async function refreshNotifBadge(preloaded) {
+    if (window.WorkerNotifMenu) {
+      if (preloaded) WorkerNotifMenu.updateBadge(preloaded);
+      else await WorkerNotifMenu.refreshBadge();
+      return;
+    }
+  }
+  window.refreshNotifBadge = refreshNotifBadge;
+
+  function updateSidebarCollapseUi() {
+    const collapsed = !!WorkerPrefs.get().sidebarCollapsed;
+    const btn = document.getElementById("sidebarCollapse");
+    if (!btn) return;
+    btn.setAttribute("aria-pressed", String(collapsed));
+    const label = WorkerI18n.t(collapsed ? "nav.expand" : "nav.collapse");
+    btn.setAttribute("aria-label", label);
+    btn.dataset.tip = label;
+  }
+
+  function syncNavTips() {
+    document.querySelectorAll(".nav-item").forEach((el) => {
+      const label = el.querySelector("span")?.textContent?.trim();
+      if (label) el.dataset.tip = label;
+    });
+    if (profileTrigger) {
+      profileTrigger.dataset.tip = displayName();
+    }
+    const notifBell = document.getElementById("notifBell");
+    if (notifBell) {
+      const tip = WorkerI18n.t("nav.notifications");
+      notifBell.dataset.tip = tip;
+      notifBell.setAttribute("aria-label", tip);
+    }
+    updateSidebarCollapseUi();
   }
 
   function applyShellI18n() {
     WorkerI18n.apply(document);
     updateUserHeader();
     updateDocumentTitle(currentView);
+    syncNavTips();
   }
 
-  WorkerPrefs.onChange(() => {
+  WorkerPrefs.onChange((_prefs, meta = {}) => {
+    const keys = meta.keys || [];
+    if (keys.length === 1 && keys[0] === "sidebarCollapsed") {
+      updateSidebarCollapseUi();
+      setProfileMenuOpen(false);
+      return;
+    }
     applyShellI18n();
     if (currentView === "settings") {
       showView("settings", { refresh: true });
@@ -192,6 +254,10 @@
   document.getElementById("menuToggle")?.addEventListener("click", () => setSidebarOpen(true));
   document.getElementById("sidebarClose")?.addEventListener("click", () => setSidebarOpen(false));
   backdrop?.addEventListener("click", () => setSidebarOpen(false));
+
+  document.getElementById("sidebarCollapse")?.addEventListener("click", () => {
+    WorkerPrefs.toggleSidebarCollapsed();
+  });
 
   profileTrigger?.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -208,7 +274,15 @@
     if (e.key === "Escape" && profileMenuOpen) setProfileMenuOpen(false);
   });
 
-  document.getElementById("sidebarSettings")?.addEventListener("click", () => openSettings());
+  document.getElementById("profileSettingsBtn")?.addEventListener("click", () => openSettings());
+  document.getElementById("profileSupportBtn")?.addEventListener("click", () => {
+    setProfileMenuOpen(false);
+    const bot = String(panelConfig.botUsername || "").replace(/^@/, "").trim();
+    const url =
+      String(panelConfig.supportUrl || "").trim() ||
+      (bot ? `https://t.me/${bot}?start=feedback` : "https://t.me/Garbonabot?start=feedback");
+    window.open(url, "_blank", "noopener,noreferrer");
+  });
   document.getElementById("profileLogoutBtn")?.addEventListener("click", logout);
 
   document.getElementById("nav")?.addEventListener("click", (e) => {
@@ -220,16 +294,20 @@
   setupHelpLinks();
   applyShellI18n();
 
-  // Поддержка в панели — внутренний роут, а не внешний URL.
-  document.getElementById("sidebarSupport")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    showView("support");
-  });
+  if (window.WorkerNotif) {
+    WorkerNotif.setUserContext(user);
+  }
+  if (window.WorkerNotifMenu) {
+    WorkerNotifMenu.bind();
+    WorkerNotifMenu.refreshBadge();
+  }
 
   const hashRaw = (location.hash || "").replace(/^#/, "");
   const [viewId, settingsTab] = hashRaw.split("/");
   if (viewId === "settings" && SETTINGS_TABS.has(settingsTab)) {
     WorkerViews.settingsTab = settingsTab;
   }
-  await showView(viewId || "dashboard");
+  const initialView =
+    viewId === "notifications" || viewId === "logs" ? "dashboard" : viewId || "dashboard";
+  await showView(initialView);
 })();

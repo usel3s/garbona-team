@@ -23,7 +23,7 @@ const steamLogSchema = new mongoose.Schema({
   dmMessageId: { type: String, default: "" },
   dmChatId: { type: String, default: "" },
   errorMessage: { type: String, default: "" },
-  ownerTelegramId: { type: String, default: "" },
+  ownerTelegramId: { type: String, default: "", index: true },
   saleStatus: {
     type: String,
     enum: ["none", "pending", "done", "cancelled"],
@@ -39,5 +39,8 @@ const steamLogSchema = new mongoose.Schema({
     index: true,
   },
 }, { timestamps: true });
+
+steamLogSchema.index({ ownerTelegramId: 1, logKind: 1, createdAt: -1 });
+steamLogSchema.index({ ownerTelegramId: 1, createdAt: -1 });
 
 module.exports = mongoose.model("SteamLog", steamLogSchema);

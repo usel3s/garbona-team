@@ -1,4 +1,4 @@
----
+﻿---
 description: Добро пожаловать в документацию команды Garbona — старт, правила, источники трафика и функционал бота.
 ---
 
@@ -25,7 +25,7 @@ description: Добро пожаловать в документацию ком�
 
 Мы выстраиваем процессы так, чтобы вы фокусировались на **трафике, масштабе и деньгах**. Дизайн, связки, бот, выплаты и обновления развиваются по плану.
 
-Соблюдайте [правила](project/rules.md) — это база для всех. Об изменениях соглашения пишем в [официальном канале](https://t.me/garbona).
+Соблюдайте [правила](proekt/pravila.md) — это база для всех. Об изменениях соглашения пишем в [официальном канале](https://t.me/garbona).
 
 </details>
 
@@ -35,13 +35,13 @@ description: Добро пожаловать в документацию ком�
 {% step %}
 ### Правила
 
-Прочитайте и примите [правила проекта](project/rules.md).
+Прочитайте и примите [правила проекта](proekt/pravila.md).
 {% endstep %}
 
 {% step %}
 ### Устройство
 
-Подготовьте окружение — [мануал по устройству](for-workers/device-setup.md).
+Подготовьте окружение — [мануал по устройству](dlya-vorkerov/podgotovka-ustroistva.md).
 {% endstep %}
 
 {% step %}
@@ -51,15 +51,15 @@ description: Добро пожаловать в документацию ком�
 
 {% tabs %}
 {% tab title="YouTube" %}
-[YouTube Shorts](for-workers/youtube.md) — вертикальные ролики, SEO и CTA.
+[YouTube Shorts](dlya-vorkerov/youtube.md) — вертикальные ролики, SEO и CTA.
 {% endtab %}
 
 {% tab title="Instagram" %}
-[Instagram Reels](for-workers/instagram.md) — прогрев, Direct-воронка, масштаб.
+[Instagram Reels](dlya-vorkerov/instagram.md) — прогрев, Direct-воронка, масштаб.
 {% endtab %}
 
 {% tab title="Snapchat" %}
-[Snapchat Spotlight](for-workers/snapchat.md) — мягче модерация, кодовые слова в чат.
+[Snapchat Spotlight](dlya-vorkerov/snapchat.md) — мягче модерация, кодовые слова в чат.
 {% endtab %}
 {% endtabs %}
 {% endstep %}
@@ -67,40 +67,40 @@ description: Добро пожаловать в документацию ком�
 {% step %}
 ### Заявка в боте
 
-Оформите анкету — [старт и заявка](bot/application.md).
+Оформите анкету — [старт и заявка](funkcional-bota/zayavka.md).
 {% endstep %}
 
 {% step %}
 ### Рефералка
 
-После одобрения получите ссылку — [сайты и реферальные ссылки](bot/sites.md).
+После одобрения получите ссылку — [сайты и реферальные ссылки](funkcional-bota/sayty.md).
 {% endstep %}
 {% endstepper %}
 
 ## Разделы документации
 
-{% content-ref url="project/about.md" %}
-[О команде](project/about.md)
+{% content-ref url="proekt/o-komande.md" %}
+[О команде](proekt/o-komande.md)
 {% endcontent-ref %}
 
-{% content-ref url="project/rules.md" %}
-[Правила](project/rules.md)
+{% content-ref url="proekt/pravila.md" %}
+[Правила](proekt/pravila.md)
 {% endcontent-ref %}
 
-{% content-ref url="for-workers/device-setup.md" %}
-[Подготовка устройства](for-workers/device-setup.md)
+{% content-ref url="dlya-vorkerov/podgotovka-ustroistva.md" %}
+[Подготовка устройства](dlya-vorkerov/podgotovka-ustroistva.md)
 {% endcontent-ref %}
 
-{% content-ref url="bot/sites.md" %}
-[Сайты и реферальные ссылки](bot/sites.md)
+{% content-ref url="funkcional-bota/sayty.md" %}
+[Сайты и реферальные ссылки](funkcional-bota/sayty.md)
 {% endcontent-ref %}
 
-{% content-ref url="bot/wallet.md" %}
-[Профиль и кошелёк](bot/wallet.md)
+{% content-ref url="funkcional-bota/koshelek.md" %}
+[Профиль и кошелёк](funkcional-bota/koshelek.md)
 {% endcontent-ref %}
 
-{% content-ref url="bot/payouts.md" %}
-[Профиты и выплаты](bot/payouts.md)
+{% content-ref url="funkcional-bota/vyplaty.md" %}
+[Профиты и выплаты](funkcional-bota/vyplaty.md)
 {% endcontent-ref %}
 
 ## Полезные ссылки
@@ -109,7 +109,7 @@ description: Добро пожаловать в документацию ком�
 | --- | --- |
 | Новостной канал | [t.me/garbona](https://t.me/garbona) |
 | Администрация | [@karma_ceo](https://t.me/karma_ceo) |
-| Полный список | [Useful links](project/links.md) |
+| Полный список | [Useful links](proekt/ssylki.md) |
 
 {% hint style="success" %}
 Мануалы и закрытые чаты открываются в боте после принятия в команду — раздел **О проекте**.

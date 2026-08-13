@@ -1,4 +1,4 @@
----
+﻿---
 description: Мануал по YouTube Shorts для воркеров Garbona — устройство, прогрев, креативы и загрузка.
 ---
 
@@ -11,7 +11,7 @@ Shorts — вертикальные ролики до **60 секунд** (фо�
 {% endhint %}
 
 {% hint style="success" %}
-Сначала подготовьте устройство — [device setup](device-setup.md).
+Сначала подготовьте устройство — [device setup](podgotovka-ustroistva.md).
 {% endhint %}
 
 ## Сценарий
@@ -46,7 +46,7 @@ Shorts — вертикальные ролики до **60 секунд** (фо�
 * Допустима адаптация **без чужих watermark** + уникализация.
 * Сильный CTA: «подробнее в описании / Telegram».
 
-См. также: [hooks](hooks.md), [creatives](creatives.md).
+См. также: [hooks](khuki.md), [creatives](kreativy.md).
 {% endstep %}
 
 {% step %}
@@ -73,6 +73,6 @@ YouTube Studio → Создать → загрузка файла + `#Shorts`.
 
 После настройки Shorts даёт условно-пассивный поток при регулярных публикациях. Держите качество креатива и CTA — остальное масштабируется системностью.
 
-{% content-ref url="../bot/sites.md" %}
-[Сайты и реферальные ссылки](../bot/sites.md)
+{% content-ref url="../funkcional-bota/sayty.md" %}
+[Сайты и реферальные ссылки](../funkcional-bota/sayty.md)
 {% endcontent-ref %}

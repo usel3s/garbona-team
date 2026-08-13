@@ -17,10 +17,10 @@ function statusBadgeClassForWithdrawal(status) {
 
 function statusLabelForWithdrawal(status) {
   const raw = String(status || "").toLowerCase();
-  if (raw === "approved") return "Одобрено";
-  if (raw === "rejected") return "Отклонено";
-  if (raw === "awaiting_payout_link") return "Ожидает выплаты";
-  if (raw === "pending") return "На рассмотрении";
+  if (raw === "approved") return WorkerI18n.t("wallet.statusApproved");
+  if (raw === "rejected") return WorkerI18n.t("wallet.statusRejected");
+  if (raw === "awaiting_payout_link") return WorkerI18n.t("wallet.statusAwaiting");
+  if (raw === "pending") return WorkerI18n.t("wallet.statusPending");
   return status || "—";
 }
 
@@ -30,6 +30,49 @@ function escapeHtml(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function renderWalletAddressCell(address) {
+  const addr = String(address || "").trim();
+  if (!addr) return `<span class="muted">—</span>`;
+
+  const headLen = Math.min(6, Math.max(2, Math.floor(addr.length * 0.22)));
+  const tailLen = Math.min(4, Math.max(2, Math.floor(addr.length * 0.14)));
+  const head = addr.slice(0, headLen);
+  const tail = addr.length > headLen + tailLen ? addr.slice(-tailLen) : "";
+  const mid = addr.slice(headLen, tail ? -tailLen : undefined) || "••••";
+
+  return `
+    <button
+      type="button"
+      class="wallet-addr"
+      data-address="${escapeHtml(addr)}"
+      title="${escapeHtml(WorkerI18n.t("wallet.copyHint") || "Наведите, чтобы увидеть · нажмите, чтобы скопировать")}"
+    >
+      <span class="wallet-addr-peek" aria-hidden="true">
+        <span class="wallet-addr-clear">${escapeHtml(head)}</span><span class="wallet-addr-blur">${escapeHtml(mid)}</span><span class="wallet-addr-clear">${escapeHtml(tail)}</span>
+      </span>
+      <span class="wallet-addr-full">${escapeHtml(addr)}</span>
+    </button>`;
+}
+
+function bindWalletAddressCopy(root) {
+  root?.querySelectorAll(".wallet-addr").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const value = String(btn.dataset.address || "").trim();
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+        if (window.WorkerToast) {
+          WorkerToast.success(WorkerI18n.t("wallet.copied") || "Адрес скопирован");
+        }
+      } catch (_) {
+        if (window.WorkerToast) {
+          WorkerToast.error(WorkerI18n.t("wallet.copyFailed") || "Не удалось скопировать");
+        }
+      }
+    });
+  });
 }
 
 function renderHistoryTable(items, tab) {
@@ -56,7 +99,7 @@ function renderHistoryTable(items, tab) {
                 (p) => `
               <tr>
                 <td class="muted">${escapeHtml(WorkerFormat.date(p.createdAt))}</td>
-                <td><span class="badge type">${escapeHtml("Профит")}</span></td>
+                <td><span class="badge type">${escapeHtml(WorkerI18n.t("wallet.typeProfit"))}</span></td>
                 <td class="td-num">${escapeHtml(WorkerFormat.money(p.amountUsd || 0))}</td>
               </tr>
             `
@@ -75,6 +118,7 @@ function renderHistoryTable(items, tab) {
           <tr>
             <th>${escapeHtml(WorkerI18n.t("wallet.historyDate") || "Дата")}</th>
             <th>${escapeHtml(WorkerI18n.t("wallet.historyType") || "Тип")}</th>
+            <th>${escapeHtml(WorkerI18n.t("wallet.historyWallet") || "Кошелёк")}</th>
             <th class="col-num">${escapeHtml(WorkerI18n.t("wallet.historyAmount") || "Сумма")}</th>
             <th>${escapeHtml(WorkerI18n.t("wallet.historyStatus") || "Статус")}</th>
           </tr>
@@ -86,6 +130,7 @@ function renderHistoryTable(items, tab) {
             <tr>
               <td class="muted">${escapeHtml(WorkerFormat.date(t.createdAt))}</td>
               <td><span class="badge type">${escapeHtml(t.method || "—")}</span></td>
+              <td class="wallet-addr-cell">${renderWalletAddressCell(t.walletAddress || t.address || "")}</td>
               <td class="td-num">${escapeHtml(WorkerFormat.money(t.amountUsd || 0))}</td>
               <td><span class="badge ${statusBadgeClassForWithdrawal(t.status)}">${escapeHtml(
                 statusLabelForWithdrawal(t.status)
@@ -100,18 +145,26 @@ function renderHistoryTable(items, tab) {
   `;
 }
 
-async function loadWallet() {
-  const wallet = await WorkerAPI.get("/wallet", { force: true });
+function setHistoryHtml(items, tab) {
+  const wrap = document.getElementById("walletHistoryWrap");
+  if (!wrap) return;
+  wrap.innerHTML = renderHistoryTable(items, tab);
+  if (tab === "withdrawals") bindWalletAddressCopy(wrap);
+}
+
+async function loadWallet({ force = false } = {}) {
+  const wallet = await WorkerAPI.get("/wallet", { force });
   return wallet || {};
 }
 
-async function loadHistory(tab) {
-  const res = await WorkerAPI.get(`/wallet/history?tab=${encodeURIComponent(tab)}`, { force: true });
+async function loadHistory(tab, { force = false } = {}) {
+  const res = await WorkerAPI.get(`/wallet/history?tab=${encodeURIComponent(tab)}`, { force });
   return res?.items || [];
 }
 
 WorkerViews.wallet = async function renderWallet(ctx) {
-  const { main, user } = ctx;
+  const { main, user, refresh } = ctx;
+  const force = !!refresh;
 
   main.innerHTML = `
     <h1 class="page-greeting">${WorkerI18n.t("wallet.greeting") || "Приветствуем,"} <em>${escapeHtml(
@@ -212,7 +265,11 @@ WorkerViews.wallet = async function renderWallet(ctx) {
   `;
 
   // Load wallet data + available value.
-  const wallet = await loadWallet();
+  const initialTab = WorkerViews.walletState.tab || "profits";
+  const [wallet, initialItems] = await Promise.all([
+    loadWallet({ force }),
+    loadHistory(initialTab, { force }),
+  ]);
   WorkerViews.walletState.wallet = wallet;
   document.getElementById("walletAvailableValue").textContent = WorkerFormat.money(wallet.availableUsd || 0);
 
@@ -241,18 +298,15 @@ WorkerViews.wallet = async function renderWallet(ctx) {
 
       const items = await loadHistory(WorkerViews.walletState.tab);
       WorkerViews.walletState.history = items;
-      document.getElementById("walletHistoryWrap").innerHTML = renderHistoryTable(
-        items,
-        WorkerViews.walletState.tab
-      );
+      setHistoryHtml(items, WorkerViews.walletState.tab);
     });
   });
 
-  // Initial history render.
-  const initialTab = WorkerViews.walletState.tab || "profits";
-  const initialItems = await loadHistory(initialTab);
+  historyTabs.querySelectorAll("button[data-wallet-tab]").forEach((b) => {
+    b.classList.toggle("is-active", b.dataset.walletTab === initialTab);
+  });
   WorkerViews.walletState.history = initialItems;
-  document.getElementById("walletHistoryWrap").innerHTML = renderHistoryTable(initialItems, initialTab);
+  setHistoryHtml(initialItems, initialTab);
 
   const dialog = document.getElementById("walletWithdrawDialog");
   const form = document.getElementById("walletWithdrawForm");
@@ -362,13 +416,13 @@ WorkerViews.wallet = async function renderWallet(ctx) {
       });
       dialog.close();
       // Refresh wallet + history.
-      WorkerViews.walletState.wallet = await loadWallet();
+      WorkerViews.walletState.wallet = await loadWallet({ force: true });
       const nextWallet = WorkerViews.walletState.wallet;
       document.getElementById("walletAvailableValue").textContent = WorkerFormat.money(nextWallet.availableUsd || 0);
 
-      const items = await loadHistory(WorkerViews.walletState.tab);
+      const items = await loadHistory(WorkerViews.walletState.tab, { force: true });
       WorkerViews.walletState.history = items;
-      document.getElementById("walletHistoryWrap").innerHTML = renderHistoryTable(items, WorkerViews.walletState.tab);
+      setHistoryHtml(items, WorkerViews.walletState.tab);
     } catch (error) {
       showError(error?.message || "Ошибка вывода.");
     }

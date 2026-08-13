@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <meta name="theme-color" content="#090909" />
     <title>Главная - Garbona</title>
@@ -15,6 +15,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="css/worker.css" />
+    <link rel="stylesheet" href="css/panel-extra.css" />
     <link rel="icon" href="../assets/logo.png" type="image/png" />
   </head>
   <body>
@@ -29,76 +30,142 @@
             <button type="button" class="sidebar-close" id="sidebarClose" aria-label="Close">✕</button>
           </div>
           <nav class="nav" id="nav">
-            <button type="button" class="nav-item is-active" data-view="dashboard">
-              <svg viewBox="0 0 24 24" fill="none"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H5.5A1.5 1.5 0 0 1 4 19V10.5Z" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 20.5V14h5v6.5" stroke="currentColor" stroke-width="1.5"/></svg>
+            <button type="button" class="nav-item" data-view="dashboard">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 10.8 12 4l8 6.8V20a1 1 0 0 1-1 1h-5.2v-6.2H10.2V21H5a1 1 0 0 1-1-1V10.8Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+              </svg>
               <span data-i18n="nav.dashboard">Главная</span>
             </button>
-            <button type="button" class="nav-item is-disabled" disabled>
-              <svg viewBox="0 0 24 24" fill="none"><path d="M7 3.5h7l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-9.5A1.5 1.5 0 0 1 5.5 20V5A1.5 1.5 0 0 1 7 3.5Z" stroke="currentColor" stroke-width="1.5"/></svg>
-              <span data-i18n="nav.logs">Логи</span>
-            </button>
             <button type="button" class="nav-item" data-view="sites">
-              <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.5"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="3.5" y="5" width="17" height="14" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M3.5 9h17" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M7 7h.01M9.5 7h.01M12 7h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path d="M8 13h4.5M8 16h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
               <span data-i18n="nav.sites">Сайты</span>
             </button>
-            <button type="button" class="nav-item is-disabled" disabled>
-              <svg viewBox="0 0 24 24" fill="none"><rect x="5" y="4" width="14" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/></svg>
-              <span data-i18n="nav.tasks">Задачи</span>
+            <button type="button" class="nav-item" data-view="analytics">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4.5 19.5h15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M7 16.5V11M12 16.5V7.5M17 16.5v-3.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              </svg>
+              <span data-i18n="nav.analytics">Аналитика</span>
             </button>
-            <button type="button" class="nav-item" data-view="team">
-              <svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8.5" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M3.8 18.5c.7-3 2.7-4.6 5.2-4.6s4.5 1.6 5.2 4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-              <span data-i18n="nav.team">Команда</span>
+            <button type="button" class="nav-item" data-view="top">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6.5 19.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M8 19.5v-5.2h8v5.2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M10 14.3V9.8h4v4.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M12 9.8V6.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M9.8 6.2h4.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <circle cx="12" cy="4.6" r="1.2" stroke="currentColor" stroke-width="1.5"/>
+              </svg>
+              <span data-i18n="nav.top">Топ</span>
             </button>
             <button type="button" class="nav-item" data-view="wallet">
-              <svg viewBox="0 0 24 24" fill="none"><path d="M6 8h12v10H6V8Z" stroke="currentColor" stroke-width="1.5"/><path d="M9 8V6.5A1.5 1.5 0 0 1 10.5 5h3A1.5 1.5 0 0 1 15 6.5V8" stroke="currentColor" stroke-width="1.5"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 8.2h14.5A1.5 1.5 0 0 1 20 9.7v8.1A1.5 1.5 0 0 1 18.5 19.3H5.5A1.5 1.5 0 0 1 4 17.8V8.2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M4 8.2V6.8A1.5 1.5 0 0 1 5.5 5.3h10.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M15.2 13.2h3.3v2.2h-3.3a1.1 1.1 0 0 1 0-2.2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+              </svg>
               <span data-i18n="nav.wallet">Кошелёк</span>
             </button>
             <button type="button" class="nav-item" data-view="settings">
-              <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4l1.4-1.4M17 7l1.4-1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 15.1a3.1 3.1 0 1 0 0-6.2 3.1 3.1 0 0 0 0 6.2Z" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M18.7 14.2c.1-.4.2-.8.2-1.2s-.1-.8-.2-1.2l1.8-1.4-1.7-3-2.1.8c-.6-.5-1.3-.8-2-1.1L14.3 4h-4.6l-.4 2.1c-.7.3-1.4.6-2 1.1l-2.1-.8-1.7 3 1.8 1.4c-.1.4-.2.8-.2 1.2s.1.8.2 1.2L3.5 15.6l1.7 3 2.1-.8c.6.5 1.3.8 2 1.1l.4 2.1h4.6l.4-2.1c.7-.3 1.4-.6 2-1.1l2.1.8 1.7-3-1.8-1.4Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+              </svg>
               <span data-i18n="nav.settings">Настройки</span>
             </button>
           </nav>
         </div>
         <div class="sidebar-bottom">
-          <div class="sidebar-foot">
-            <button type="button" class="sidebar-foot-item" id="sidebarSettings">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4l1.4-1.4M17 7l1.4-1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-              <span data-i18n="nav.settings">Настройки</span>
+          <div class="sidebar-notif" id="notifWrap">
+            <button type="button" class="sidebar-notif-btn" id="notifBell" aria-expanded="false" aria-haspopup="true" aria-label="Уведомления">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 4.5a5 5 0 0 1 5 5v2.2c0 .8.3 1.6.8 2.2l.7.8H5.5l.7-.8c.5-.6.8-1.4.8-2.2V9.5a5 5 0 0 1 5-5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M10 18.2a2.2 2.2 0 0 0 4 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <span class="sidebar-notif-label" data-i18n="notif.pageTitle">Уведомления</span>
+              <span class="sidebar-notif-badge" id="notifBellBadge" hidden></span>
             </button>
-            <a href="#" class="sidebar-foot-item" id="sidebarGettingStarted" target="_blank" rel="noopener noreferrer">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4.5 16.5c3.5-7 11.5-7 15 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12 15.5V6.5l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M8.5 6.5h7v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <span data-i18n="nav.gettingStarted">С чего начать?</span>
-            </a>
-            <a href="#" class="sidebar-foot-item" id="sidebarUpdates" target="_blank" rel="noopener noreferrer">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l1.2 3.6L17 8l-3.6 1.2L12 13l-1.2-3.8L7 8l3.8-1.4L12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5 16l.8 2.4L8 19l-2.2.8L5 22l-.8-2.2L2 19l2.2-.6L5 16Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M19 14l.6 1.8L21.5 17l-1.9.7L19 19.5l-.6-1.8L16.5 17l1.9-.7L19 14Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-              <span data-i18n="nav.updates">Обновления</span>
-            </a>
-            <a href="#" class="sidebar-foot-item" id="sidebarSupport" target="_blank" rel="noopener noreferrer">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 9.5a2.5 2.5 0 0 1 4.2 1.8c0 1.8-2.7 2.2-2.7 3.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="17" r=".75" fill="currentColor"/></svg>
-              <span data-i18n="nav.support">Поддержка</span>
-            </a>
+            <div class="notif-menu" id="notifMenu" hidden role="menu">
+              <div class="notif-menu-head">
+                <span data-i18n="notif.pageTitle">Уведомления</span>
+                <button type="button" class="btn btn-ghost notif-menu-mark" id="notifMarkAllBtn" data-i18n="notif.markAll">Прочитать все</button>
+              </div>
+              <div class="notif-menu-list" id="notifMenuList"></div>
+            </div>
           </div>
           <div class="sidebar-profile-wrap">
             <button type="button" class="sidebar-profile-trigger" id="profileMenuTrigger" aria-expanded="false" aria-haspopup="menu">
               <img class="sidebar-avatar" id="userAvatar" src="../assets/logo.png" alt="" />
               <div class="sidebar-user-meta">
                 <div class="sidebar-user-name" id="userName">—</div>
-                <div class="sidebar-user-stats" id="userStats">0.00 $ · —</div>
+                <div class="sidebar-user-stats" id="userStats">0.00 $</div>
               </div>
               <span class="sidebar-profile-chevron" aria-hidden="true"></span>
             </button>
             <div class="sidebar-profile-menu" id="profileMenu" hidden role="menu">
-              <button type="button" class="sidebar-profile-menu-item" id="profileLogoutBtn" role="menuitem" data-i18n="nav.logout">Выйти</button>
+              <button type="button" class="sidebar-profile-menu-item" id="profileSettingsBtn" role="menuitem">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 15.1a3.1 3.1 0 1 0 0-6.2 3.1 3.1 0 0 0 0 6.2Z" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M18.7 14.2c.1-.4.2-.8.2-1.2s-.1-.8-.2-1.2l1.8-1.4-1.7-3-2.1.8c-.6-.5-1.3-.8-2-1.1L14.3 4h-4.6l-.4 2.1c-.7.3-1.4.6-2 1.1l-2.1-.8-1.7 3 1.8 1.4c-.1.4-.2.8-.2 1.2s.1.8.2 1.2L3.5 15.6l1.7 3 2.1-.8c.6.5 1.3.8 2 1.1l.4 2.1h4.6l.4-2.1c.7-.3 1.4-.6 2-1.1l2.1.8 1.7-3-1.8-1.4Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                </svg>
+                <span data-i18n="nav.settings">Настройки</span>
+              </button>
+              <a href="#" class="sidebar-profile-menu-item is-hidden" id="profileGettingStarted" role="menuitem" target="_blank" rel="noopener noreferrer">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M5 5.5h5.2a3 3 0 0 1 3 3V20a2.4 2.4 0 0 0-2.4-2.4H5V5.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                  <path d="M19 5.5h-5.2a3 3 0 0 0-3 3V20a2.4 2.4 0 0 1 2.4-2.4H19V5.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                </svg>
+                <span data-i18n="nav.gettingStarted">С чего начать?</span>
+              </a>
+              <button type="button" class="sidebar-profile-menu-item" id="profileSupportBtn" role="menuitem">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M5.5 12a6.5 6.5 0 0 1 13 0v2.2a2.3 2.3 0 0 1-2.3 2.3h-.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  <path d="M5.5 13.2V12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  <rect x="3.8" y="12.2" width="3.2" height="4.4" rx="1.2" stroke="currentColor" stroke-width="1.5"/>
+                  <rect x="17" y="12.2" width="3.2" height="4.4" rx="1.2" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M15.5 19.2c0 1.2-1.4 2.1-3.5 2.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <span data-i18n="nav.support">Поддержка</span>
+              </button>
+              <div class="sidebar-profile-menu-sep" role="separator"></div>
+              <button type="button" class="sidebar-profile-menu-item is-danger" id="profileLogoutBtn" role="menuitem">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M10 4.5H6.5A1.5 1.5 0 0 0 5 6v12a1.5 1.5 0 0 0 1.5 1.5H10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  <path d="M14 8.5 18.5 12 14 15.5M18.2 12H9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span data-i18n="nav.logout">Выйти</span>
+              </button>
             </div>
           </div>
         </div>
+        <button
+          type="button"
+          class="sidebar-collapse"
+          id="sidebarCollapse"
+          aria-pressed="false"
+          aria-label="Свернуть"
+        >
+          <svg class="sidebar-collapse-collapse" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M14.5 7 10 12l4.5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <svg class="sidebar-collapse-expand" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M10 7l4.5 5L10 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
       </aside>
 
       <div class="shell">
         <header class="topbar">
           <button type="button" class="menu-toggle" id="menuToggle" aria-label="Menu">
             <span class="menu-toggle-bars"></span>
+            <span class="menu-toggle-dot" id="menuNotifDot" hidden aria-hidden="true"></span>
           </button>
+          <div class="topbar-spacer"></div>
         </header>
         <main class="main" id="main"></main>
       </div>
@@ -111,10 +178,14 @@
     <script src="js/format.js"></script>
     <script src="js/dropdown.js"></script>
     <script src="js/charts.js"></script>
+    <script src="js/toast.js"></script>
+    <script src="js/notif.js"></script>
+    <script src="js/notifMenu.js"></script>
     <script src="js/views/dashboard.js"></script>
     <script src="js/views/sites.js"></script>
+    <script src="js/views/analytics.js"></script>
+    <script src="js/views/top.js"></script>
     <script src="js/views/settings.js"></script>
-    <script src="js/views/team.js"></script>
     <script src="js/views/wallet.js"></script>
     <script src="js/views/support.js"></script>
     <script src="js/shell.js"></script>

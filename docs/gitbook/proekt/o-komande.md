@@ -1,4 +1,4 @@
----
+﻿---
 description: Кто такие Garbona, что даём воркерам и чего ждём взамен.
 ---
 
@@ -36,13 +36,13 @@ description: Кто такие Garbona, что даём воркерам и че
 
 ## Чего ждём от вас
 
-1. Соблюдение [правил](rules.md).
+1. Соблюдение [правил](pravila.md).
 2. Системная работа с источниками трафика.
 3. Корректное общение со стаффом — **только в личку**.
 4. Без рекламы сторонних проектов и токсичности.
 
 {% hint style="warning" %}
-Нарушение правил = риск кика без обсуждения в общем чате. Читайте [Rules](rules.md) целиком.
+Нарушение правил = риск кика без обсуждения в общем чате. Читайте [Rules](pravila.md) целиком.
 {% endhint %}
 
 ## Обратная связь
@@ -58,14 +58,14 @@ description: Кто такие Garbona, что даём воркерам и че
 
 ## Дальше по документации
 
-{% content-ref url="rules.md" %}
-[Правила](rules.md)
+{% content-ref url="pravila.md" %}
+[Правила](pravila.md)
 {% endcontent-ref %}
 
-{% content-ref url="links.md" %}
-[Полезные ссылки](links.md)
+{% content-ref url="ssylki.md" %}
+[Полезные ссылки](ssylki.md)
 {% endcontent-ref %}
 
-{% content-ref url="../bot/application.md" %}
-[Старт и заявка](../bot/application.md)
+{% content-ref url="../funkcional-bota/zayavka.md" %}
+[Старт и заявка](../funkcional-bota/zayavka.md)
 {% endcontent-ref %}

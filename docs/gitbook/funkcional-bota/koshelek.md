@@ -1,4 +1,4 @@
----
+﻿---
 description: Профиль участника и вывод средств через кошелёк бота.
 ---
 
@@ -61,7 +61,7 @@ description: Профиль участника и вывод средств че
 {% endtabs %}
 
 {% hint style="warning" %}
-За вывод с панели также может взиматься комиссия маркета — см. [правила](../project/rules.md).
+За вывод с панели также может взиматься комиссия маркета — см. [правила](../proekt/pravila.md).
 {% endhint %}
 
 <details>
@@ -71,6 +71,6 @@ description: Профиль участника и вывод средств че
 
 </details>
 
-{% content-ref url="payouts.md" %}
-[Профиты и выплаты](payouts.md)
+{% content-ref url="vyplaty.md" %}
+[Профиты и выплаты](vyplaty.md)
 {% endcontent-ref %}

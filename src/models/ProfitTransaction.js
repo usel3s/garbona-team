@@ -11,4 +11,6 @@ const profitTransactionSchema = new mongoose.Schema(
   { timestamps: { createdAt: true, updatedAt: false } }
 );
 
+profitTransactionSchema.index({ userId: 1, createdAt: -1 });
+
 module.exports = mongoose.model("ProfitTransaction", profitTransactionSchema);

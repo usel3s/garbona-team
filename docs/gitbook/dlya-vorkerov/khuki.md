@@ -1,4 +1,4 @@
----
+﻿---
 description: Хуки и transition hooks — как удерживать внимание в первые секунды ролика.
 ---
 
@@ -65,6 +65,6 @@ description: Хуки и transition hooks — как удерживать вни
 * Эмоция сразу: любопытство, FOMO, азарт, «секрет».
 {% endhint %}
 
-{% content-ref url="creatives.md" %}
-[Креативы](creatives.md)
+{% content-ref url="kreativy.md" %}
+[Креативы](kreativy.md)
 {% endcontent-ref %}

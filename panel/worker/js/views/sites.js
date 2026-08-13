@@ -15,8 +15,8 @@ WorkerViews.sites = async function renderSites(ctx) {
 };
 
 async function renderSitesList(main, ctx) {
-  WorkerAPI.bust("/sites/domains");
-  const data = await WorkerAPI.get("/sites/domains", { force: true });
+  const force = !!ctx?.refresh;
+  const data = await WorkerAPI.get("/sites/domains", { force });
   const domains = data.domains || [];
   const filters = WorkerViews.sitesState.filters;
 
@@ -32,11 +32,11 @@ async function renderSitesList(main, ctx) {
     </div>
     <div id="sitesGrid" class="sites-grid"></div>
     <dialog class="sites-dialog" id="sitesAddDialog">
-      <form method="dialog" class="sites-dialog-body" id="sitesAddForm">
+      <form method="dialog" class="sites-dialog-body sites-add-body" id="sitesAddForm">
         <h3 class="sites-dialog-title">${WorkerI18n.t("sites.addDomain")}</h3>
         <input class="input" id="sitesDomainInput" placeholder="example.com" autocomplete="off" />
-        <div class="muted sites-dialog-hint" id="sitesDomainHint"></div>
-        <div class="sites-dialog-actions">
+        <div class="muted sites-dialog-hint" id="sitesDomainHint" hidden></div>
+        <div class="sites-dialog-actions sites-add-actions">
           <button type="button" class="btn btn-ghost" id="sitesAddCancel">${WorkerI18n.t("sites.cancel")}</button>
           <button type="button" class="btn btn-ghost" id="sitesDomainCheck">${WorkerI18n.t("sites.check")}</button>
           <button type="submit" class="btn btn-primary" id="sitesDomainSubmit">${WorkerI18n.t("sites.add")}</button>
@@ -68,22 +68,30 @@ async function renderSitesList(main, ctx) {
   });
 
   const dialog = document.getElementById("sitesAddDialog");
-  document.getElementById("sitesAddOpen").addEventListener("click", () => dialog.showModal());
+  const setDomainHint = (text) => {
+    const hint = document.getElementById("sitesDomainHint");
+    if (!hint) return;
+    const value = String(text || "").trim();
+    hint.textContent = value;
+    hint.hidden = !value;
+  };
+  document.getElementById("sitesAddOpen").addEventListener("click", () => {
+    setDomainHint("");
+    dialog.showModal();
+  });
   document.getElementById("sitesAddCancel").addEventListener("click", () => dialog.close());
   document.getElementById("sitesDomainCheck").addEventListener("click", async () => {
-    const hint = document.getElementById("sitesDomainHint");
     try {
       const preview = await WorkerAPI.post("/sites/domains/check", {
         domain: document.getElementById("sitesDomainInput").value.trim(),
       });
-      hint.textContent = WorkerI18n.t("sites.checkOk", { ip: preview.ip || "—" });
+      setDomainHint(WorkerI18n.t("sites.checkOk", { ip: preview.ip || "—" }));
     } catch (error) {
-      hint.textContent = error.message || WorkerI18n.t("common.error");
+      setDomainHint(error.message || WorkerI18n.t("common.error"));
     }
   });
   document.getElementById("sitesAddForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const hint = document.getElementById("sitesDomainHint");
     try {
       const result = await WorkerAPI.post("/sites/domains", {
         domain: document.getElementById("sitesDomainInput").value.trim(),
@@ -96,9 +104,18 @@ async function renderSitesList(main, ctx) {
         await renderSitesList(main, ctx);
       }
     } catch (error) {
-      hint.textContent = error.message || WorkerI18n.t("common.error");
+      setDomainHint(error.message || WorkerI18n.t("common.error"));
     }
   });
+
+  function openDomain(domainId) {
+    const id = Number(domainId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    WorkerViews.sitesState.selectedId = id;
+    WorkerViews.sites(ctx).catch((error) => {
+      if (window.WorkerToast) WorkerToast.error(error);
+    });
+  }
 
   function paintSitesGrid(allDomains) {
     const grid = document.getElementById("sitesGrid");
@@ -109,10 +126,15 @@ async function renderSitesList(main, ctx) {
     }
     grid.innerHTML = filtered.map((d) => renderDomainCard(d)).join("");
     grid.querySelectorAll(".site-card[data-domain-id]").forEach((card) => {
+      const open = () => openDomain(card.dataset.domainId);
       card.addEventListener("click", (e) => {
-        if (e.target.closest(".site-tool")) return;
-        WorkerViews.sitesState.selectedId = Number(card.dataset.domainId);
-        WorkerViews.sites(ctx);
+        if (e.target.closest(".site-tool-check")) return;
+        open();
+      });
+      card.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        open();
       });
     });
   }
@@ -171,11 +193,30 @@ function renderBanTooltip(type, banChecks) {
   `;
 }
 
-function renderMiniStat(label, value) {
+const SITE_STAT_ICONS = {
+  views:
+    '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.5"/></svg>',
+  clicks:
+    '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 4.5v6.2M9 10.7 5.8 19.2a1 1 0 0 0 1.3 1.3L10.4 17l2.1 3.4a1 1 0 0 0 1.8-.3L17.2 8.2a1.2 1.2 0 0 0-1.5-1.5L9 10.7Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>',
+  auths:
+    '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5 19 7v5.2c0 4.2-2.8 7.1-7 8.3-4.2-1.2-7-4.1-7-8.3V7l7-3.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="m9.2 12 1.9 1.9 3.7-3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  logs:
+    '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 3.5h6.2L17.5 8v11.5A1.5 1.5 0 0 1 16 21H7a1.5 1.5 0 0 1-1.5-1.5v-15A1.5 1.5 0 0 1 7 3.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13.2 3.5V8H17.5M9 12.2h6M9 15.4h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  online:
+    '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5.5 12a6.5 6.5 0 0 1 13 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8.2 12a3.8 3.8 0 0 1 7.6 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/></svg>',
+  links:
+    '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10 14a5 5 0 0 1 0-7l1-1a5 5 0 0 1 7 7l-1 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14 10a5 5 0 0 1 0 7l-1 1a5 5 0 0 1-7-7l1-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+};
+
+function renderMiniStat(label, value, iconKey) {
+  const icon = SITE_STAT_ICONS[iconKey] || SITE_STAT_ICONS.views;
   return `
     <div class="site-mini-stat">
-      <span class="site-mini-stat-val">${value}</span>
-      <span class="site-mini-stat-lbl">${WorkerFormat.escapeHtml(label)}</span>
+      <span class="site-mini-stat-icon" aria-hidden="true">${icon}</span>
+      <div class="site-mini-stat-body">
+        <span class="site-mini-stat-val">${value}</span>
+        <span class="site-mini-stat-lbl">${WorkerFormat.escapeHtml(label)}</span>
+      </div>
     </div>
   `;
 }
@@ -187,51 +228,57 @@ function renderDomainCard(domain) {
   if (domain.isPaused) {
     badges.push(`<span class="site-badge site-badge-paused">${WorkerI18n.t("sites.paused")}</span>`);
   }
-  if (domain.isTeamPublic) {
-    badges.push(`<span class="site-badge site-badge-team">${WorkerI18n.t("sites.team")}</span>`);
-  } else if (domain.isOwn) {
-    badges.push(`<span class="site-badge site-badge-own">${WorkerI18n.t("sites.own")}</span>`);
-  }
 
   const hasLinks = Number(domain.linksCount || 0) > 0;
   const actionLabel = hasLinks ? WorkerI18n.t("sites.openLinks") : WorkerI18n.t("sites.createLink");
   const googleBanned = banChecks.google?.banned;
+  const whoisBanned = banChecks.whois?.banned;
+  const cfBanned = banChecks.cloudflare?.banned;
 
   return `
     <article class="site-card${domain.isPaused ? " is-paused" : ""}" data-domain-id="${domain.id}" tabindex="0" role="button">
       <div class="site-card-head">
         <div class="site-card-id">
-          <h3 class="site-card-title" title="${WorkerFormat.escapeHtml(domain.domain)}">${WorkerFormat.escapeHtml(domain.domain)}</h3>
+          <div class="site-card-title-row">
+            <span class="site-card-status${domain.isPaused ? " is-off" : " is-on"}" title="${domain.isPaused ? WorkerI18n.t("sites.paused") : WorkerI18n.t("sites.filterActive")}"></span>
+            <h3 class="site-card-title" title="${WorkerFormat.escapeHtml(domain.domain)}">${WorkerFormat.escapeHtml(domain.domain)}</h3>
+          </div>
           <div class="site-card-badges">${badges.join("")}</div>
         </div>
         <div class="site-card-tools">
           <span class="site-tool site-tool-count" title="${WorkerI18n.t("sites.linksCount")}">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M10 14a5 5 0 0 1 0-7l1-1a5 5 0 0 1 7 7l-1 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14 10a5 5 0 0 1 0 7l-1 1a5 5 0 0 1-7-7l1-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10 14a5 5 0 0 1 0-7l1-1a5 5 0 0 1 7 7l-1 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14 10a5 5 0 0 1 0 7l-1 1a5 5 0 0 1-7-7l1-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
             <span>${domain.linksCount || 0}</span>
           </span>
-          <button type="button" class="site-tool site-tool-check${banChecks.whois?.banned ? " is-banned" : ""}" aria-label="Whois">
-            <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.5"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20" stroke="currentColor" stroke-width="1.5"/></svg>
+          <button type="button" class="site-tool site-tool-check${whoisBanned ? " is-banned" : " is-ok"}" aria-label="Whois">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5 19.5 7v5.4c0 4.4-3 7.5-7.5 8.6-4.5-1.1-7.5-4.2-7.5-8.6V7L12 3.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 11v5M12 8.2h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
             ${renderBanTooltip("whois", banChecks)}
           </button>
-          <button type="button" class="site-tool site-tool-check${banChecks.cloudflare?.banned ? " is-banned" : ""}" aria-label="Cloudflare">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M7 16h10l1-2.5H6.5L7 16Z" fill="currentColor" opacity=".35"/><path d="M8 13.5h9.5c.5-2.5-1-4.5-3.5-4.5-1.5 0-2.8.8-3.5 2.1C10.2 9.8 8.5 9 7 9.5 5.2 10.1 4 11.7 4 13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <button type="button" class="site-tool site-tool-check${cfBanned ? " is-banned" : " is-ok"}" aria-label="Cloudflare">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7.2 16.2h10.4c1.4 0 2.4-1 2.2-2.3-.3-1.8-1.9-3.1-3.8-3.1-.4 0-.8.1-1.2.2A4.4 4.4 0 0 0 10.6 8a4.5 4.5 0 0 0-4.3 3.3A3.3 3.3 0 0 0 4 14.4c0 1 .8 1.8 1.8 1.8h1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             ${renderBanTooltip("cloudflare", banChecks)}
           </button>
-          <button type="button" class="site-tool site-tool-check site-tool-google${googleBanned ? " is-banned" : ""}" aria-label="Google">
-            <span class="site-tool-g">G</span>
+          <button type="button" class="site-tool site-tool-check site-tool-google${googleBanned ? " is-banned" : " is-ok"}" aria-label="Google">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12.2 11.2v2.7h4.3c-.2 1.2-1.5 3.5-4.3 3.5A4.9 4.9 0 1 1 12.2 7c1.3 0 2.5.5 3.4 1.3l2.3-2.2A8.2 8.2 0 1 0 12.2 20.2c4.7 0 7.8-3.3 7.8-8 0-.5 0-.9-.1-1.3h-7.7Z" fill="currentColor"/></svg>
             ${renderBanTooltip("google", banChecks)}
           </button>
         </div>
       </div>
       <div class="site-card-kpi">
-        ${renderMiniStat(WorkerI18n.t("sites.views"), stats.views || 0)}
-        ${renderMiniStat(WorkerI18n.t("sites.clicks"), stats.clicks || 0)}
-        ${renderMiniStat(WorkerI18n.t("sites.auths"), stats.auths || 0)}
-        ${renderMiniStat(WorkerI18n.t("sites.validLogs"), stats.logs || 0)}
+        ${renderMiniStat(WorkerI18n.t("sites.views"), stats.views || 0, "views")}
+        ${renderMiniStat(WorkerI18n.t("sites.clicks"), stats.clicks || 0, "clicks")}
+        ${renderMiniStat(WorkerI18n.t("sites.auths"), stats.auths || 0, "auths")}
+        ${renderMiniStat(WorkerI18n.t("sites.validLogs"), stats.logs || 0, "logs")}
       </div>
       <div class="site-card-foot">
-        <span class="site-card-date muted">${WorkerFormat.escapeHtml(WorkerFormat.shortDayTime(domain.createdAt))}</span>
-        <span class="site-card-go">${WorkerFormat.escapeHtml(actionLabel)}</span>
+        <span class="site-card-date">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="5.5" width="16" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M8 3.5v4M16 3.5v4M4 9.5h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          ${WorkerFormat.escapeHtml(WorkerFormat.shortDayTime(domain.createdAt))}
+        </span>
+        <button type="button" class="site-card-go" data-open-domain="${domain.id}">
+          ${WorkerFormat.escapeHtml(actionLabel)}
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
       </div>
     </article>
   `;
@@ -251,11 +298,6 @@ function renderDomainBadges(domain) {
   const badges = [];
   if (domain.isPaused) {
     badges.push(`<span class="site-badge site-badge-paused">${WorkerI18n.t("sites.paused")}</span>`);
-  }
-  if (domain.isTeamPublic) {
-    badges.push(`<span class="site-badge site-badge-team">${WorkerI18n.t("sites.team")}</span>`);
-  } else if (domain.isOwn) {
-    badges.push(`<span class="site-badge site-badge-own">${WorkerI18n.t("sites.own")}</span>`);
   }
   return badges.join("");
 }
@@ -283,6 +325,7 @@ function renderBindMeta(domain) {
 }
 
 function renderLinkRow(link, domainName) {
+  if (!link || typeof link !== "object") return "";
   const url = linkDisplayUrl(link, domainName);
   const stats = link.stats || {};
   const flags = [];
@@ -639,20 +682,40 @@ function paintTemplateGrid(templates, state, onSelect) {
 }
 
 async function renderSiteDetail(main, domainId, ctx) {
-  WorkerAPI.bust(`/sites/domains/${domainId}`);
-  const [detail, templatesData] = await Promise.all([
-    WorkerAPI.get(`/sites/domains/${domainId}`, { force: true }),
-    WorkerAPI.get("/sites/templates").catch(() => ({ templates: [] })),
-  ]);
+  const force = !!ctx?.refresh;
+  let detail;
+  let templatesData = { templates: [] };
+  try {
+    [detail, templatesData] = await Promise.all([
+      WorkerAPI.get(`/sites/domains/${domainId}`, { force }),
+      WorkerAPI.get("/sites/templates", { force: false }).catch(() => ({ templates: [] })),
+    ]);
+  } catch (error) {
+    if (window.WorkerToast) WorkerToast.error(error);
+    WorkerViews.sitesState.selectedId = null;
+    await renderSitesList(main, ctx);
+    return;
+  }
+  if (!detail?.domain) {
+    if (window.WorkerToast) {
+      WorkerToast.error(WorkerI18n.t("toast.notFound"));
+    }
+    WorkerViews.sitesState.selectedId = null;
+    await renderSitesList(main, ctx);
+    return;
+  }
   const d = detail.domain;
   const domainPaused = Boolean(d.isPaused);
-  const templates = templatesData.templates || [];
-  const links = detail.links || [];
+  const templates = templatesData?.templates || [];
+  const links = (Array.isArray(detail.links) ? detail.links : []).filter(
+    (link) => link && typeof link === "object"
+  );
   const stats = d.stats || {};
   const banChecks = d.banChecks || {};
   const googleBanned = banChecks.google?.banned;
 
-  main.innerHTML = `
+  try {
+    main.innerHTML = `
     <nav class="sites-breadcrumb-line">
       <button type="button" class="sites-crumb-btn" id="sitesBack">${WorkerI18n.t("sites.breadcrumbSites")}</button>
       <span class="sites-crumb-sep">›</span>
@@ -682,10 +745,10 @@ async function renderSiteDetail(main, domainId, ctx) {
         </div>
       </div>
       <div class="site-domain-kpi">
-        ${renderMiniStat(WorkerI18n.t("sites.onlineLabel"), d.online || 0)}
-        ${renderMiniStat(WorkerI18n.t("sites.linksCount"), links.length)}
-        ${renderMiniStat(WorkerI18n.t("sites.views"), stats.views || 0)}
-        ${renderMiniStat(WorkerI18n.t("sites.validLogs"), stats.logs || 0)}
+        ${renderMiniStat(WorkerI18n.t("sites.onlineLabel"), d.online || 0, "online")}
+        ${renderMiniStat(WorkerI18n.t("sites.linksCount"), links.length, "links")}
+        ${renderMiniStat(WorkerI18n.t("sites.views"), stats.views || 0, "views")}
+        ${renderMiniStat(WorkerI18n.t("sites.validLogs"), stats.logs || 0, "logs")}
       </div>
       <div class="site-domain-meta">
         <span class="muted">${WorkerI18n.t("sites.createdAt")}:</span> ${WorkerFormat.escapeHtml(WorkerFormat.shortDayTime(d.createdAt))}
@@ -779,7 +842,7 @@ async function renderSiteDetail(main, domainId, ctx) {
             <label class="link-radio"><input type="radio" name="tradeAction" value="redirect" /> ${WorkerI18n.t("sites.actionRedirect")}</label>
           </div>
         </div>
-        <div class="sites-dialog-actions">
+        <div class="sites-dialog-actions sites-dialog-actions-stack">
           <button type="button" class="btn btn-primary" id="linkFormSubmit">${WorkerI18n.t("sites.submitAdd")}</button>
           <button type="button" class="btn btn-ghost" id="linkFormCancel">${WorkerI18n.t("sites.cancel")}</button>
         </div>
@@ -803,54 +866,59 @@ async function renderSiteDetail(main, domainId, ctx) {
     </dialog>
   `;
 
-  document.getElementById("sitesBack").addEventListener("click", () => {
-    WorkerViews.sitesState.selectedId = null;
-    WorkerViews.sites(ctx);
-  });
-
-  const refreshDetail = () => renderSiteDetail(main, domainId, ctx);
-  const linkModal = mountLinkFormModal({
-    templates,
-    domainId,
-    domainPaused,
-    onSaved: refreshDetail,
-  });
-
-  ["siteAddLink", "siteEmptyAdd"].forEach((id) => {
-    document.getElementById(id)?.addEventListener("click", () => linkModal.openCreate());
-  });
-
-  main.querySelectorAll("tr[data-link-id]").forEach((row) => {
-    const linkId = Number(row.dataset.linkId);
-    const link = links.find((item) => Number(item.id) === linkId);
-    if (!link) return;
-    mountLinkActionsMenu(
-      row.querySelector(".link-actions-host"),
-      link,
-      {
-        onEdit: (item) => linkModal.openEdit(item),
-        onDelete: async (item) => {
-          if (!confirm(WorkerI18n.t("sites.deleteLinkConfirm"))) return;
-          try {
-            await WorkerAPI.del(`/sites/domains/${domainId}/links/${item.id}`);
-            await refreshDetail();
-          } catch (error) {
-            alert(error.message || WorkerI18n.t("common.error"));
-          }
-        },
-      },
-      { domainPaused }
-    );
-  });
-
-  document.getElementById("domainDelete")?.addEventListener("click", async () => {
-    if (!confirm(WorkerI18n.t("sites.deleteConfirm", { domain: d.domain }))) return;
-    try {
-      await WorkerAPI.del(`/sites/domains/${domainId}`);
+    document.getElementById("sitesBack").addEventListener("click", () => {
       WorkerViews.sitesState.selectedId = null;
-      await WorkerViews.sites(ctx);
-    } catch (error) {
-      alert(error.message || WorkerI18n.t("common.error"));
-    }
-  });
+      WorkerViews.sites(ctx);
+    });
+
+    const refreshDetail = () => renderSiteDetail(main, domainId, { ...ctx, refresh: true });
+    const linkModal = mountLinkFormModal({
+      templates,
+      domainId,
+      domainPaused,
+      onSaved: refreshDetail,
+    });
+
+    ["siteAddLink", "siteEmptyAdd"].forEach((id) => {
+      document.getElementById(id)?.addEventListener("click", () => linkModal.openCreate());
+    });
+
+    main.querySelectorAll("tr[data-link-id]").forEach((row) => {
+      const linkId = Number(row.dataset.linkId);
+      const link = links.find((item) => Number(item.id) === linkId);
+      if (!link) return;
+      mountLinkActionsMenu(
+        row.querySelector(".link-actions-host"),
+        link,
+        {
+          onEdit: (item) => linkModal.openEdit(item),
+          onDelete: async (item) => {
+            if (!confirm(WorkerI18n.t("sites.deleteLinkConfirm"))) return;
+            try {
+              await WorkerAPI.del(`/sites/domains/${domainId}/links/${item.id}`);
+              await refreshDetail();
+            } catch (error) {
+              alert(error.message || WorkerI18n.t("common.error"));
+            }
+          },
+        },
+        { domainPaused }
+      );
+    });
+
+    document.getElementById("domainDelete")?.addEventListener("click", async () => {
+      if (!confirm(WorkerI18n.t("sites.deleteConfirm", { domain: d.domain }))) return;
+      try {
+        await WorkerAPI.del(`/sites/domains/${domainId}`);
+        WorkerViews.sitesState.selectedId = null;
+        await WorkerViews.sites(ctx);
+      } catch (error) {
+        alert(error.message || WorkerI18n.t("common.error"));
+      }
+    });
+  } catch (error) {
+    if (window.WorkerToast) WorkerToast.error(error);
+    WorkerViews.sitesState.selectedId = null;
+    await renderSitesList(main, ctx);
+  }
 }

@@ -25,6 +25,8 @@ const {
 } = require("../services/adminSitesService");
 const { listWorkerLogs, listWorkerTasks } = require("../services/workerPanelService");
 const { getWorkerOverview } = require("../services/workerDashboardService");
+const { getTopWorkers } = require("../services/topService");
+const { resolveWorkerPhotoUrl } = require("../utils/profilePhoto");
 const {
   createWithdrawalRequest,
   getAvailableUsd,
@@ -53,7 +55,7 @@ const {
   curatorApplicationModerationKeyboard,
 } = require("../services/curatorService");
 const { serializeCuratorLike } = require("../services/workerTeamService");
-const { requestSell, requestProcess } = require("../services/workerLogActionsService");
+const { requestSell, requestProcess, requestCheckValid, getLogDetail, refreshLogDetail } = require("../services/workerLogActionsService");
 
 // Avatar upload is handled via Telegram photos only.
 
@@ -104,9 +106,10 @@ function createUserRouter(bot) {
         await user.save();
       }
 
-      if (!user.avatarUrl) {
-        user.avatarUrl = tg.photoUrl || "";
-        if (user.avatarUrl) await user.save();
+      const nextAvatar = resolveWorkerPhotoUrl(user, { loginPhotoUrl: tg.photoUrl });
+      if (nextAvatar && nextAvatar !== user.avatarUrl) {
+        user.avatarUrl = nextAvatar;
+        await user.save();
       }
 
       if (!canAccessWorkerPanel(user)) {
@@ -119,7 +122,7 @@ function createUserRouter(bot) {
         ok: true,
         user: {
           ...serializeMember(user, currencyCtx),
-          photoUrl: user.avatarUrl || "",
+          photoUrl: resolveWorkerPhotoUrl(user),
           isAdmin: isAdminTelegramId(user.telegramId),
         },
       });
@@ -135,13 +138,22 @@ function createUserRouter(bot) {
 
   router.get("/me", requireWorker, async (req, res) => {
     const currencyCtx = await getCurrencyContext();
+    const photoUrl = resolveWorkerPhotoUrl(req.worker);
+    if (photoUrl && photoUrl !== req.worker.avatarUrl) {
+      req.worker.avatarUrl = photoUrl;
+      try {
+        await req.worker.save();
+      } catch (_) {
+        // non-fatal: still return resolved url
+      }
+    }
     res.json({
       user: {
         ...serializeMember(req.worker, currencyCtx),
         payoutMethod: req.worker.payoutMethod || "",
         payoutAddress: req.worker.payoutAddress || "",
         isAdmin: isAdminTelegramId(req.worker.telegramId),
-        photoUrl: req.worker.avatarUrl || "",
+        photoUrl,
       },
     });
   });
@@ -177,9 +189,88 @@ function createUserRouter(bot) {
     }
   });
 
+  router.get("/top", requireWorker, async (req, res) => {
+    try {
+      const period = ["all", "24h", "7d", "30d"].includes(String(req.query.period || ""))
+        ? String(req.query.period)
+        : "7d";
+      const limit = Math.min(30, Math.max(5, Number(req.query.limit || 10)));
+      const rows = await getTopWorkers(period, limit);
+      const me = String(req.worker.telegramId || "");
+      res.json({
+        period,
+        rows: rows.map((row, index) => ({
+          rank: index + 1,
+          telegramId: row.isAnonymous ? "" : row.telegramId || "",
+          displayName: row.isAnonymous
+            ? "Аноним"
+            : row.firstName || row.username || (row.telegramId ? `ID ${row.telegramId}` : "—"),
+          username: row.isAnonymous ? "" : row.username || "",
+          isAnonymous: Boolean(row.isAnonymous),
+          isMe: !row.isAnonymous && me && String(row.telegramId) === me,
+          totalUsd: Number(row.total || 0),
+          count: Number(row.count || 0),
+        })),
+      });
+    } catch (error) {
+      res.status(error.status || 500).json({ error: error.message });
+    }
+  });
+
+  router.get("/alerts", requireWorker, async (req, res) => {
+    try {
+      const payload = await listDomains(req.worker, { light: true });
+      const domains = payload?.domains || [];
+      const alerts = [];
+      for (const domain of domains) {
+        const domainName = String(domain.domain || domain.id || "domain");
+        if (domain.isPaused) {
+          alerts.push({
+            id: `paused:${domain.id}`,
+            type: "paused",
+            severity: "warn",
+            title: domainName,
+            message: "Домен на паузе — ссылки не работают",
+            domainId: domain.id,
+            createdAt: domain.updatedAt || domain.createdAt || null,
+          });
+        }
+        const checks = domain.banChecks || {};
+        for (const key of ["google", "cloudflare", "whois", "yandex", "steam"]) {
+          if (checks[key]?.banned) {
+            alerts.push({
+              id: `ban:${domain.id}:${key}`,
+              type: "ban",
+              severity: "danger",
+              title: domainName,
+              message: `Бан: ${key}`,
+              domainId: domain.id,
+              banType: key,
+              createdAt: checks.updatedAt || domain.updatedAt || null,
+            });
+          }
+        }
+      }
+      alerts.sort((a, b) => {
+        const severityRank = { danger: 0, warn: 1, info: 2 };
+        const sa = severityRank[a.severity] ?? 9;
+        const sb = severityRank[b.severity] ?? 9;
+        if (sa !== sb) return sa - sb;
+        return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+      });
+      res.json({ alerts, count: alerts.length });
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
   router.get("/sites/domains", requireWorker, async (req, res) => {
     try {
-      res.json(await listDomains(req.worker));
+      const includeLinks =
+        req.query.includeLinks === "1" ||
+        req.query.includeLinks === "true" ||
+        req.query.includeLinks === "yes";
+      res.json(await listDomains(req.worker, { includeLinks }));
     } catch (error) {
       res.status(error.status || 400).json({ error: error.message });
     }
@@ -293,7 +384,7 @@ function createUserRouter(bot) {
     res.json({
       user: {
         ...serializeMember(req.worker, currencyCtx),
-        photoUrl: req.worker.avatarUrl || "",
+        photoUrl: resolveWorkerPhotoUrl(req.worker),
         payoutMethod: req.worker.payoutMethod || "",
         payoutAddress: req.worker.payoutAddress || "",
         appLogin: appLoginOf(req.worker),
@@ -360,7 +451,7 @@ function createUserRouter(bot) {
         ok: true,
         user: {
           ...serializeMember(req.worker, currencyCtx),
-          photoUrl: req.worker.avatarUrl || "",
+          photoUrl: resolveWorkerPhotoUrl(req.worker),
           payoutMethod: req.worker.payoutMethod || "",
           payoutAddress: req.worker.payoutAddress || "",
         },
@@ -398,7 +489,7 @@ function createUserRouter(bot) {
       res.json({
         user: {
           ...serializeMember(req.worker, currencyCtx),
-          photoUrl: req.worker.avatarUrl || "",
+          photoUrl: resolveWorkerPhotoUrl(req.worker),
           payoutMethod: req.worker.payoutMethod || "",
           payoutAddress: req.worker.payoutAddress || "",
         },
@@ -546,6 +637,33 @@ function createUserRouter(bot) {
     }
   });
 
+  router.get("/logs/:sourceId", requireWorker, async (req, res) => {
+    try {
+      const sourceId = String(req.params.sourceId || "").trim();
+      res.json(await getLogDetail(req.worker, sourceId));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.post("/logs/:sourceId/check-valid", requireWorker, async (req, res) => {
+    try {
+      const sourceId = String(req.params.sourceId || "").trim();
+      res.json(await requestCheckValid(req.worker, sourceId));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.post("/logs/:sourceId/refresh", requireWorker, async (req, res) => {
+    try {
+      const sourceId = String(req.params.sourceId || "").trim();
+      res.json(await refreshLogDetail(req.worker, sourceId));
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
   router.post("/logs/:sourceId/sell", requireWorker, async (req, res) => {
     try {
       const sourceId = String(req.params.sourceId || "").trim();
@@ -555,7 +673,7 @@ function createUserRouter(bot) {
         saleStatus: log.saleStatus || "none",
       });
     } catch (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(error.status || 400).json({ error: error.message });
     }
   });
 
@@ -568,7 +686,7 @@ function createUserRouter(bot) {
         processStatus: log.processStatus || "none",
       });
     } catch (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(error.status || 400).json({ error: error.message });
     }
   });
 

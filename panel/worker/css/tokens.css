@@ -21,10 +21,14 @@
   --chart-tooltip-bg: #161616;
   --chart-tooltip-border: #2a2a2a;
   --chart-tooltip-text: #e8e8e8;
-  --login-gradient-1: rgba(46, 229, 157, 0.06);
-  --login-gradient-2: rgba(59, 158, 255, 0.04);
+  --login-gradient-1: rgba(46, 229, 157, 0.18);
+  --login-gradient-2: rgba(34, 158, 217, 0.14);
   --radius: 8px;
-  --sidebar-w: 200px;
+  --sidebar-w: 220px;
+  --sidebar-w-collapsed: 68px;
+  --sidebar-current-w: var(--sidebar-w);
+  --accent: var(--green);
+  --accent-soft: rgba(46, 229, 157, 0.12);
   --page-gutter: clamp(20px, 4.2vw, 72px);
   --content-max: 1240px;
   --font: "Inter", system-ui, -apple-system, sans-serif;
@@ -53,6 +57,12 @@
   --chart-tooltip-bg: #ffffff;
   --chart-tooltip-border: #e4e4e4;
   --chart-tooltip-text: #111111;
-  --login-gradient-1: rgba(26, 159, 108, 0.06);
-  --login-gradient-2: rgba(36, 112, 196, 0.04);
+  --login-gradient-1: rgba(26, 159, 108, 0.14);
+  --login-gradient-2: rgba(34, 158, 217, 0.1);
+  --accent: var(--green);
+  --accent-soft: rgba(26, 159, 108, 0.12);
+}
+
+html[data-sidebar="collapsed"] {
+  --sidebar-current-w: var(--sidebar-w-collapsed);
 }

@@ -2,11 +2,11 @@
 description: Как загрузить документацию Garbona в GitBook (ZIP или Markdown).
 ---
 
-# Import to GitBook
+# Импорт в GitBook
 
 Пакет лежит в `docs/gitbook/` и готов для **Import → Markdown / ZIP**.
 
-## Variant A — ZIP
+## Вариант A — ZIP
 
 {% stepper %}
 {% step %}
@@ -26,50 +26,41 @@ description: Как загрузить документацию Garbona в GitBo
 {% endstep %}
 {% endstepper %}
 
-## Variant B — Markdown folder
+## Вариант B — папка Markdown
 
 Загрузите папку `docs/gitbook/` как набор Markdown-файлов.
 
 ```text
 gitbook/
-├── SUMMARY.md          ← оглавление
-├── README.md           ← главная
-├── project/            ← о команде, правила, ссылки
-├── for-workers/        ← мануалы по трафику
-└── bot/                ← функционал Telegram-бота
+├── SUMMARY.md
+├── README.md
+├── proekt/
+├── dlya-vorkerov/
+└── funcional-bota/
 ```
 
 {% hint style="info" %}
-Имена файлов и папок — на английском (`sites.md`, `device-setup.md`). Заголовки страниц внутри — на русском для воркеров.
+Пути и имена файлов — русские транслитом (`sayty.md`, `podgotovka-ustroistva.md`). Заголовки страниц — на русском.
 {% endhint %}
 
-## Naming map
+## Структура
 
-| Старое | Новое |
+| Раздел | Путь |
 | --- | --- |
-| `proekt/` | `project/` |
-| `dlya-vorkerov/` | `for-workers/` |
-| `funkcional-bota/` | `bot/` |
-| `sayty.md` | `sites.md` |
-| `koshelek.md` | `wallet.md` |
-| `vyplaty.md` | `payouts.md` |
-| `zayavka.md` | `application.md` |
-| `podgotovka-ustroistva.md` | `device-setup.md` |
-| `khuki.md` | `hooks.md` |
-| `kloaking.md` | `cloaking.md` |
-| `kreativy.md` | `creatives.md` |
+| Проект | `proekt/o-komande.md`, `pravila.md`, `ssylki.md` |
+| Для воркеров | `dlya-vorkerov/…` |
+| Функционал бота | `funkcional-bota/zayavka.md`, `sayty.md`, `koshelek.md`, `vyplaty.md` |
 
-## GitBook blocks we use
-
-В мануалах активно используются:
+## Блоки GitBook
 
 * `{% hint %}` — info / success / warning / danger
 * `{% stepper %}` / `{% step %}` — пошаговые сценарии
-* `{% tabs %}` / `{% tab %}` — варианты (iOS/Android, домены, источники)
-* `{% content-ref %}` — карточки-ссылки на другие страницы
-* `<details>` — FAQ и раскрывающиеся блоки
+* `{% tabs %}` / `{% tab %}` — варианты
+* `{% content-ref %}` — карточки-ссылки
+* `{% embed %}` — встраивание ссылок
+* `<details>` — FAQ
 * таблицы, чеклисты `- [ ]`, code blocks
 
 {% hint style="success" %}
-После импорта откройте любую страницу в редакторе GitBook — блоки подтянутся автоматически, если синтаксис сохранён.
+После импорта откройте любую страницу в редакторе GitBook — блоки подтянутся автоматически.
 {% endhint %}

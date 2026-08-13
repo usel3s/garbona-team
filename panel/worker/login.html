@@ -4,44 +4,61 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <meta name="theme-color" content="#090909" />
     <title>Вход - Garbona</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="css/worker.css" />
     <link rel="icon" href="../assets/logo.png" type="image/png" />
   </head>
-  <body>
+  <body class="login-body">
     <div class="login-page">
-      <div class="login-shell">
+      <div class="login-atmosphere" aria-hidden="true">
+        <span class="login-glow login-glow-a"></span>
+        <span class="login-glow login-glow-b"></span>
+        <span class="login-grid"></span>
+      </div>
+
+      <header class="login-topbar">
         <div class="login-controls">
           <button type="button" class="pref-btn" id="langBtn" aria-label="Language">RU</button>
           <button type="button" class="pref-btn" id="themeBtn" aria-label="Theme">☾</button>
         </div>
-        <div class="brand">
-          <div class="brand-logo"><img src="../assets/logo.png" alt="" /></div>
-          <div>
-            <span class="brand-name">Garbona</span>
-            <span class="brand-tagline" data-i18n="brand.tagline">панель воркера</span>
+      </header>
+
+      <main class="login-stage">
+        <div class="login-hero">
+          <div class="login-mark">
+            <img src="../assets/logo.png" alt="" width="56" height="56" />
           </div>
+          <h1 class="login-brand" data-i18n="brand.name">Garbona</h1>
+          <p class="login-kicker" data-i18n="brand.tagline">панель воркера</p>
+          <p class="login-subtitle" data-i18n="login.subtitle">
+            Доступ только для участников команды. Войдите через Telegram.
+          </p>
+
+          <div id="loginError" class="login-error" role="alert">
+            <span id="loginErrorText" data-i18n="login.errorDefault">Не удалось войти</span>
+          </div>
+
+          <button type="button" class="btn-telegram" id="tgAuthBtn" hidden>
+            <svg class="btn-telegram-icon" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+              <path
+                d="M21.5 4.3 3.8 11.1c-1.2.5-1.2 1.1-.2 1.4l4.5 1.4 1.7 5.3c.2.6.1.8.8.8.5 0 .7-.2 1-.5l2.5-2.4 5.2 3.8c1 .5 1.6.2 1.9-.9L22.9 5.6c.3-1.3-.5-1.9-1.4-1.3Zm-3.1 3.1-8.4 7.5-.3 3.4-1.6-5.3 10.3-5.6Z"
+              />
+            </svg>
+            <span data-i18n="login.telegram">Войти через Telegram</span>
+          </button>
+
+          <p class="login-footnote" data-i18n="login.footnote">Продолжая, вы подтверждаете правила команды.</p>
         </div>
-        <div id="loginError" class="login-error" role="alert">
-          <span id="loginErrorText" data-i18n="login.errorDefault">Не удалось войти</span>
-        </div>
-        <h1 class="login-title" data-i18n="login.title">Вход</h1>
-        <p class="login-subtitle" data-i18n="login.subtitle">
-          Доступ только для участников команды. Войдите через Telegram.
-        </p>
-        <button type="button" class="btn-telegram" id="tgAuthBtn" hidden>
-          <span data-i18n="login.telegram">Войти через Telegram</span>
-        </button>
-      </div>
+      </main>
     </div>
     <script src="js/api.js"></script>
     <script src="js/auth.js"></script>
@@ -102,10 +119,12 @@
             return;
           }
           errorEl.classList.remove("is-visible");
+          authBtn.disabled = true;
           try {
             await WorkerAuth.loginTelegram(data);
             location.replace("index.html#dashboard");
           } catch (err) {
+            authBtn.disabled = false;
             const map = {
               not_team_member: "login.errorNotTeam",
               bad_hash: "login.errorBadHash",
