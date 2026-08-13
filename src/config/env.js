@@ -82,8 +82,8 @@ const env = {
   /** Вставка между customId и случайной частью (по умолчанию token=). */
   referralIdvTokenPrefix: String(process.env.REFERRAL_IDV_TOKEN_PREFIX || "token="),
   referralIdvTokenLength: Number(process.env.REFERRAL_IDV_TOKEN_LENGTH || 16),
-  // Host platforms (Bothost etc.) inject PORT; PANEL_PORT is for local overrides.
-  panelPort: Number(process.env.PORT || process.env.PANEL_PORT || 8787),
+  // PORT — platform inject (production). PANEL_PORT — local override.
+  panelPort: Number(process.env.PANEL_PORT || process.env.PORT || 8787),
   panelCookieSecret:
     process.env.PANEL_COOKIE_SECRET || process.env.BOT_TOKEN || "garbona-panel-dev",
   panelPublicUrl: String(process.env.PANEL_PUBLIC_URL || "").replace(/\/$/, ""),
@@ -92,6 +92,8 @@ const env = {
   panelAuthDisabled: ["1", "true", "yes", "on"].includes(
     String(process.env.PANEL_AUTH_DISABLED || "").trim().toLowerCase()
   ),
+  /** When auth is disabled, impersonate this worker (falls back to first ADMIN_IDS). */
+  panelDevTelegramId: String(process.env.PANEL_DEV_TELEGRAM_ID || "").trim(),
 };
 
 function validateEnv() {

@@ -10,6 +10,7 @@ function startPanelServer(bot) {
   const app = express();
   const panelRoot = path.resolve(__dirname, "../../panel");
   const appRoot = path.resolve(panelRoot, "app");
+  const workerRoot = path.resolve(panelRoot, "worker");
 
   app.disable("x-powered-by");
   app.use(express.json({ limit: "1mb" }));
@@ -22,6 +23,11 @@ function startPanelServer(bot) {
   app.use("/app", express.static(appRoot, { index: false, extensions: ["html"] }));
   app.get(["/app", "/app/"], (_req, res) => {
     res.redirect("/app/index.html");
+  });
+
+  app.use("/worker", express.static(workerRoot, { index: false, extensions: ["html"] }));
+  app.get(["/worker", "/worker/"], (_req, res) => {
+    res.redirect("/worker/index.html");
   });
 
   // HTML/JS панели — без долгого кэша, чтобы админка сразу подхватывала обновления UI.
@@ -44,6 +50,7 @@ function startPanelServer(bot) {
     const publicUrl = env.panelPublicUrl || `http://127.0.0.1:${port}`;
     logger.info(`Panel server listening on http://${host}:${port} → ${publicUrl}`);
     logger.info(`Worker app: ${publicUrl}/app/`);
+    logger.info(`Worker panel v2: ${publicUrl}/worker/`);
   });
 
   return server;

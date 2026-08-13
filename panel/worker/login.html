@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <meta name="theme-color" content="#090909" />
+    <title>Вход - Garbona</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/worker.css" />
+    <link rel="icon" href="../assets/logo.png" type="image/png" />
+  </head>
+  <body>
+    <div class="login-page">
+      <div class="login-shell">
+        <div class="login-controls">
+          <button type="button" class="pref-btn" id="langBtn" aria-label="Language">RU</button>
+          <button type="button" class="pref-btn" id="themeBtn" aria-label="Theme">☾</button>
+        </div>
+        <div class="brand">
+          <div class="brand-logo"><img src="../assets/logo.png" alt="" /></div>
+          <div>
+            <span class="brand-name">Garbona</span>
+            <span class="brand-tagline" data-i18n="brand.tagline">панель воркера</span>
+          </div>
+        </div>
+        <div id="loginError" class="login-error" role="alert">
+          <span id="loginErrorText" data-i18n="login.errorDefault">Не удалось войти</span>
+        </div>
+        <h1 class="login-title" data-i18n="login.title">Вход</h1>
+        <p class="login-subtitle" data-i18n="login.subtitle">
+          Доступ только для участников команды. Войдите через Telegram.
+        </p>
+        <button type="button" class="btn-telegram" id="tgAuthBtn" hidden>
+          <span data-i18n="login.telegram">Войти через Telegram</span>
+        </button>
+      </div>
+    </div>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/prefs.js"></script>
+    <script src="js/i18n.js"></script>
+    <script>
+      (async function () {
+        WorkerPrefs.init();
+
+        const errorEl = document.getElementById("loginError");
+        const errorText = document.getElementById("loginErrorText");
+        const authBtn = document.getElementById("tgAuthBtn");
+        const langBtn = document.getElementById("langBtn");
+        const themeBtn = document.getElementById("themeBtn");
+
+        function applyLoginI18n() {
+          WorkerI18n.apply(document);
+          const { lang, theme } = WorkerPrefs.get();
+          langBtn.textContent = lang.toUpperCase();
+          themeBtn.textContent = theme === "dark" ? "☾" : "☀";
+          document.title = `${WorkerI18n.t("login.title")} - ${WorkerI18n.t("brand.name")}`;
+        }
+
+        langBtn.addEventListener("click", () => {
+          WorkerPrefs.toggleLang();
+          applyLoginI18n();
+        });
+        themeBtn.addEventListener("click", () => {
+          WorkerPrefs.toggleTheme();
+          applyLoginI18n();
+        });
+
+        applyLoginI18n();
+
+        function showError(key, fallback) {
+          errorText.textContent = WorkerI18n.t(key) || fallback;
+          errorEl.classList.add("is-visible");
+        }
+
+        try {
+          const cfg = await WorkerAuth.getConfig();
+          if (cfg.usdRubRate) WorkerPrefs.setRate(cfg.usdRubRate);
+          if (cfg.authDisabled) {
+            location.replace("index.html#dashboard");
+            return;
+          }
+        } catch (_) {}
+
+        try {
+          await WorkerAuth.me();
+          location.replace("index.html#dashboard");
+          return;
+        } catch (_) {}
+
+        window.onTelegramAuth = async function (data) {
+          if (!data) {
+            showError("login.errorCancelled");
+            return;
+          }
+          errorEl.classList.remove("is-visible");
+          try {
+            await WorkerAuth.loginTelegram(data);
+            location.replace("index.html#dashboard");
+          } catch (err) {
+            const map = {
+              not_team_member: "login.errorNotTeam",
+              bad_hash: "login.errorBadHash",
+              expired: "login.errorExpired",
+            };
+            showError(map[err.message], err.message || WorkerI18n.t("login.errorDefault"));
+          }
+        };
+
+        let botId = "";
+        try {
+          const cfg = await WorkerAuth.getConfig();
+          botId = String(cfg.botId || "").trim();
+        } catch (_) {
+          showError("login.errorConfig");
+          return;
+        }
+
+        if (!/^\d+$/.test(botId)) {
+          showError("login.errorBotToken");
+          return;
+        }
+
+        authBtn.hidden = false;
+        function startTelegramAuth() {
+          if (!window.Telegram?.Login?.auth) {
+            showError("login.errorWidget");
+            return;
+          }
+          window.Telegram.Login.auth(
+            { bot_id: botId, request_access: true },
+            (data) => window.onTelegramAuth(data)
+          );
+        }
+        authBtn.addEventListener("click", startTelegramAuth);
+
+        const script = document.createElement("script");
+        script.async = true;
+        script.src = "https://telegram.org/js/telegram-widget.js?22";
+        script.onerror = () => showError("login.errorWidgetLoad");
+        document.body.appendChild(script);
+      })();
+    </script>
+  </body>
+</html>

@@ -295,16 +295,28 @@ async function getTeamReferralForDomain(telegramId, domainId) {
   return user?.teamReferrals?.find((row) => Number(row.domainId) === Number(domainId)) || null;
 }
 
+async function getTeamReferralByLinkId(telegramId, panelLinkId) {
+  const user = await getUserByTelegramId(telegramId);
+  const id = Number(panelLinkId);
+  if (!Number.isFinite(id)) return null;
+  return user?.teamReferrals?.find((row) => Number(row.panelLinkId) === id) || null;
+}
+
 async function upsertTeamReferral(telegramId, { domainId, path, panelLinkId }) {
   const user = await getUserByTelegramId(telegramId);
   if (!user) return null;
-  const referrals = (user.teamReferrals || []).filter(
-    (row) => Number(row.domainId) !== Number(domainId)
-  );
+  const domain = Number(domainId);
+  const normalizedPath = String(path || "").replace(/^\/+/, "");
+  const linkId = Number.isFinite(Number(panelLinkId)) ? Number(panelLinkId) : null;
+  const referrals = (user.teamReferrals || []).filter((row) => {
+    if (linkId != null && Number(row.panelLinkId) === linkId) return false;
+    if (Number(row.domainId) === domain && String(row.path || "") === normalizedPath) return false;
+    return true;
+  });
   referrals.push({
-    domainId: Number(domainId),
-    path: String(path),
-    panelLinkId: Number.isFinite(Number(panelLinkId)) ? Number(panelLinkId) : null,
+    domainId: domain,
+    path: normalizedPath,
+    panelLinkId: linkId,
   });
   user.teamReferrals = referrals;
   await user.save();
@@ -318,6 +330,18 @@ async function clearTeamReferralForDomain(telegramId, domainId) {
   user.teamReferrals = (user.teamReferrals || []).filter(
     (row) => Number(row.domainId) !== Number(domainId)
   );
+  if (user.teamReferrals.length === before) return user;
+  await user.save();
+  return user;
+}
+
+async function clearTeamReferralByLinkId(telegramId, panelLinkId) {
+  const user = await getUserByTelegramId(telegramId);
+  if (!user) return null;
+  const id = Number(panelLinkId);
+  if (!Number.isFinite(id)) return user;
+  const before = (user.teamReferrals || []).length;
+  user.teamReferrals = (user.teamReferrals || []).filter((row) => Number(row.panelLinkId) !== id);
   if (user.teamReferrals.length === before) return user;
   await user.save();
   return user;
@@ -374,7 +398,9 @@ module.exports = {
   findUserByQuery,
   isTeamReferralPathTaken,
   getTeamReferralForDomain,
+  getTeamReferralByLinkId,
   upsertTeamReferral,
   clearTeamReferralForDomain,
+  clearTeamReferralByLinkId,
   listTeamReferralsFromDb,
 };

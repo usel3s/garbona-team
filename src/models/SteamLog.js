@@ -32,6 +32,12 @@ const steamLogSchema = new mongoose.Schema({
   },
   saleChannelChatId: { type: String, default: "" },
   saleChannelMessageId: { type: String, default: "" },
+  processStatus: {
+    type: String,
+    enum: ["none", "pending", "done", "cancelled"],
+    default: "none",
+    index: true,
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model("SteamLog", steamLogSchema);

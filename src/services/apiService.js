@@ -1,4 +1,5 @@
 const axios = require("axios");
+const FormData = require("form-data");
 const { env } = require("../config/env");
 const { createTtlCache } = require("../utils/ttlCache");
 
@@ -148,6 +149,10 @@ function invalidateDomainCaches(token) {
   panelDataCache.invalidatePrefix(`${s}:list`);
 }
 
+function invalidateTemplateCaches(token) {
+  panelDataCache.invalidatePrefix(`${cacheScope(token)}:templates`);
+}
+
 async function getDomains(token, offset = 0, limit = 15) {
   const key = `${cacheScope(token)}:domains:${offset}:${limit}`;
   return panelDataCache.getOrSet(
@@ -267,6 +272,41 @@ async function findTemplateById(token, templateId) {
   }
   return null;
 }
+
+/**
+ * Создание шаблона в Uproject (как в панели): multipart name + isPublic + service + HTML file.
+ * @param {string} token
+ * @param {{ name: string, isPublic?: boolean, code: string|Buffer, service?: string }} opts
+ */
+async function createTemplate(token, { name, isPublic = false, code, service = "Steam" } = {}) {
+  const title = String(name || "").trim();
+  if (!title) throw new Error("Укажите название шаблона");
+  const html = typeof code === "string" ? code : Buffer.isBuffer(code) ? code.toString("utf8") : "";
+  if (!String(html || "").trim()) throw new Error("Пришлите HTML-код шаблона");
+
+  const form = new FormData();
+  form.append("name", title);
+  form.append("isPublic", isPublic === true || isPublic === "true" ? "true" : "false");
+  form.append("service", String(service || "Steam"));
+  form.append("file", Buffer.from(String(html), "utf8"), {
+    filename: "template.html",
+    contentType: "text/html",
+  });
+
+  const data = (
+    await withPanelRetry(() =>
+      panelClient(token).post("/templates", form, {
+        headers: form.getHeaders(),
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+        timeout: 60000,
+      })
+    )
+  ).data;
+  invalidateTemplateCaches(token);
+  return data;
+}
+
 async function createSteamLink(token, payload) {
   const data = (await withPanelRetry(() => panelClient(token).post("/steam/links", payload))).data;
   invalidateDomainCaches(token);
@@ -372,6 +412,7 @@ module.exports = {
   getSteamLinks,
   getTemplates,
   findTemplateById,
+  createTemplate,
   createSteamLink,
   updateSteamLink,
   deleteSteamLink,

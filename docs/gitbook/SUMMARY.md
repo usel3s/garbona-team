@@ -4,23 +4,23 @@
 
 ## Проект
 
-* [О команде](proekt/o-komande.md)
-* [Правила](proekt/pravila.md)
-* [Полезные ссылки](proekt/ssylki.md)
+* [О команде](project/about.md)
+* [Правила](project/rules.md)
+* [Полезные ссылки](project/links.md)
 
 ## Для воркеров
 
-* [Подготовка устройства](dlya-vorkerov/podgotovka-ustroistva.md)
-* [YouTube](dlya-vorkerov/youtube.md)
-* [Instagram](dlya-vorkerov/instagram.md)
-* [Snapchat](dlya-vorkerov/snapchat.md)
-* [Хуки](dlya-vorkerov/khuki.md)
-* [Клоакинг](dlya-vorkerov/kloaking.md)
-* [Креативы](dlya-vorkerov/kreativy.md)
+* [Подготовка устройства](for-workers/device-setup.md)
+* [YouTube](for-workers/youtube.md)
+* [Instagram](for-workers/instagram.md)
+* [Snapchat](for-workers/snapchat.md)
+* [Хуки](for-workers/hooks.md)
+* [Клоакинг](for-workers/cloaking.md)
+* [Креативы](for-workers/creatives.md)
 
 ## Функционал бота
 
-* [Старт и заявка](funkcional-bota/zayavka.md)
-* [Сайты и реферальные ссылки](funkcional-bota/sayty.md)
-* [Профиль и кошелёк](funkcional-bota/koshelek.md)
-* [Профиты и выплаты](funkcional-bota/vyplaty.md)
+* [Старт и заявка](bot/application.md)
+* [Сайты и реферальные ссылки](bot/sites.md)
+* [Профиль и кошелёк](bot/wallet.md)
+* [Профиты и выплаты](bot/payouts.md)

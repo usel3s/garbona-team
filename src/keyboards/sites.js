@@ -16,6 +16,7 @@ function sitesKeyboard(domains = [], ownerId = null) {
       return [btn(parts.join(" · ").slice(0, 64), `sites:domain:${domain.id}`, "link")];
     }),
     [btn("Добавить домен", "sites:add", "upload")],
+    [btn("Добавить шаблон", "sites:template:add", "code")],
     [btn("Назад", "menu:home", "home")],
   ]);
 }
@@ -27,6 +28,16 @@ function sitesBindConfirmKeyboard() {
   ]);
 }
 
+function templatePublicKeyboard() {
+  return Markup.inlineKeyboard([
+    [
+      btn("Публичный", "sites:template:public:1", "visible"),
+      btn("Приватный", "sites:template:public:0", "hidden"),
+    ],
+    [btn("Отменить", "sites:cancel", "error")],
+  ]);
+}
+
 function domainLinksKeyboard(domainId, links = [], { team = false } = {}) {
   const rows = [
     ...links
@@ -34,7 +45,7 @@ function domainLinksKeyboard(domainId, links = [], { team = false } = {}) {
       .map((link) => [
         btn(
           `/${link.path || "random"} · ${link.template?.name || "без шаблона"}`.slice(0, 60),
-          "sites:links:noop",
+          `sites:link:open:${domainId}:${link.id}`,
           "link"
         ),
       ]),
@@ -159,6 +170,37 @@ function referralTemplatesKeyboard(domainId, templates = []) {
   ]);
 }
 
+function referralCreateTemplatesKeyboard(domainId, templates = []) {
+  return Markup.inlineKeyboard([
+    ...templates
+      .slice(0, 12)
+      .map((template) => [
+        btn(
+          `${template.name || template.id} · #${template.id}`.slice(0, 60),
+          `sites:ref:create:tpl:${domainId}:${template.id}`,
+          "file"
+        ),
+      ]),
+    [btn("Создать свой", `sites:ref:create:tpl:new:${domainId}`, "code")],
+    [btn("Поиск по ID", `sites:ref:create:tpl:search:${domainId}`, "edit")],
+    [btn("Отменить", "sites:cancel", "error")],
+  ]);
+}
+
+function referralCreateWindowKeyboard(domainId) {
+  return Markup.inlineKeyboard([
+    [
+      btn("Фейк-окно", `sites:ref:create:win:${domainId}:FakeWindow`, "visible"),
+      btn("Текущее окно", `sites:ref:create:win:${domainId}:CurrentWindow`, "visible"),
+    ],
+    [
+      btn("Новое окно", `sites:ref:create:win:${domainId}:NewWindow`, "link"),
+      btn("About:Blank", `sites:ref:create:win:${domainId}:AboutBlank`, "file"),
+    ],
+    [btn("Отменить", "sites:cancel", "error")],
+  ]);
+}
+
 function referralWindowKeyboard(domainId) {
   return Markup.inlineKeyboard([
     [
@@ -176,6 +218,7 @@ function referralWindowKeyboard(domainId) {
 module.exports = {
   sitesKeyboard,
   sitesBindConfirmKeyboard,
+  templatePublicKeyboard,
   domainLinksKeyboard,
   domainDeleteConfirmKeyboard,
   teamDomainKeyboard,
@@ -186,5 +229,7 @@ module.exports = {
   referralParamsKeyboard,
   referralWindowKeyboard,
   referralTemplatesKeyboard,
+  referralCreateTemplatesKeyboard,
+  referralCreateWindowKeyboard,
   referralDeleteConfirmKeyboard,
 };

@@ -11,6 +11,8 @@ function clearPendingInputs(ctx) {
   ctx.session.walletWithdraw = null;
 
   ctx.session.sitesFlow = null;
+  ctx.session.templateFlow = null;
+  ctx.session.refCreate = null;
   ctx.session.linkCreate = null;
   ctx.session.linkCreateStep = null;
   ctx.session.linkTemplates = null;

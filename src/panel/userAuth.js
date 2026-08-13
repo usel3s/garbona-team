@@ -96,9 +96,9 @@ function canAccessWorkerPanel(user) {
 }
 
 async function resolveDevWorker() {
-  const telegramId = String(env.adminIds[0] || "").trim();
+  const telegramId = String(env.panelDevTelegramId || env.adminIds[0] || "").trim();
   if (!telegramId) {
-    throw new Error("PANEL_AUTH_DISABLED requires ADMIN_IDS");
+    throw new Error("PANEL_AUTH_DISABLED requires PANEL_DEV_TELEGRAM_ID or ADMIN_IDS");
   }
   let user = await getUserByTelegramId(telegramId);
   if (!user) {

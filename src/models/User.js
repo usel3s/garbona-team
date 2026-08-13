@@ -33,8 +33,12 @@ const userSchema = new mongoose.Schema(
     totalProfit: { type: Number, default: 0, min: 0 },
     bio: { type: String, default: "" },
     isAnonymous: { type: Boolean, default: false },
+    /** Custom avatar for Garbona panel (public URL). */
+    avatarUrl: { type: String, default: "" },
     panelUsername: { type: String, default: "" },
     panelPassword: { type: String, default: "" },
+    /** Хеш пароля входа в веб-панель Garbona (salt:hash, scrypt). */
+    appPasswordHash: { type: String, default: "" },
     panelCreatedAt: { type: Date, default: null },
     /** Публичный кастомный ID участника команды (до 12 символов). */
     customId: { type: String, default: "", maxlength: 12 },
