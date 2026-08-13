@@ -1,5 +1,6 @@
 const { Markup } = require("telegraf");
-const { btn, urlBtn, switchInlineBtn } = require("../utils/emoji");
+const { btn, urlBtn, webAppBtn, switchInlineBtn } = require("../utils/emoji");
+const { workerPanelAppUrl } = require("../utils/panelLinks");
 
 function applicationStartKeyboard() {
   return Markup.inlineKeyboard([
@@ -20,9 +21,16 @@ function acceptedStartKeyboard() {
 }
 
 function participantPanelKeyboard(isAdmin) {
-  const rows = [
+  const panelUrl = workerPanelAppUrl();
+  const rows = [];
+
+  if (panelUrl) {
+    rows.push([webAppBtn("Открыть панель", panelUrl, "code")]);
+  }
+
+  rows.push(
     [btn("Профиль", "menu:profile", "profile")],
-    [btn("Сайты", "menu:sites", "link")],
+    // Сайты скрыты в боте — управление в веб-панели (handlers не удалены)
     [
       btn("О проекте", "menu:about", "info"),
       btn("Настройки", "menu:settings", "settings"),
@@ -32,11 +40,22 @@ function participantPanelKeyboard(isAdmin) {
       btn("Прозвонщицы", "menu:callers", "broadcast"),
       btn("Кураторы", "menu:curators", "users"),
     ],
-    [btn("Топ воркеров", "menu:top_workers", "analytics")],
-  ];
+    [btn("Топ воркеров", "menu:top_workers", "analytics")]
+  );
+
   if (isAdmin) {
     rows.push([btn("Админ-панель", "admin:panel", "code")]);
   }
+  return Markup.inlineKeyboard(rows);
+}
+
+function sitesMovedToPanelKeyboard() {
+  const panelUrl = workerPanelAppUrl();
+  const rows = [];
+  if (panelUrl) {
+    rows.push([webAppBtn("Открыть панель · Сайты", `${panelUrl}#sites`, "link")]);
+  }
+  rows.push([btn("Назад", "menu:home", "home")]);
   return Markup.inlineKeyboard(rows);
 }
 
@@ -241,6 +260,7 @@ module.exports = {
   rulesAcceptKeyboard,
   acceptedStartKeyboard,
   participantPanelKeyboard,
+  sitesMovedToPanelKeyboard,
   profileKeyboard,
   walletKeyboard,
   profitsKeyboard,

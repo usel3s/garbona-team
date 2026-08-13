@@ -107,6 +107,14 @@ function urlBtn(text, url, emojiKey) {
   return button;
 }
 
+function webAppBtn(text, url, emojiKey) {
+  const button = { text, web_app: { url } };
+  if (emojiKey && E[emojiKey]) {
+    button.icon_custom_emoji_id = E[emojiKey];
+  }
+  return button;
+}
+
 function switchInlineBtn(text, query, emojiKey) {
   const button = {
     text,
@@ -118,4 +126,4 @@ function switchInlineBtn(text, query, emojiKey) {
   return button;
 }
 
-module.exports = { E, FALLBACK, pe, btn, urlBtn, switchInlineBtn };
+module.exports = { E, FALLBACK, pe, btn, urlBtn, webAppBtn, switchInlineBtn };

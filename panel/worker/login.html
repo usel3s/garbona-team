@@ -60,6 +60,7 @@
         </div>
       </main>
     </div>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="js/api.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/prefs.js"></script>
@@ -98,20 +99,40 @@
           errorEl.classList.add("is-visible");
         }
 
+        function goApp() {
+          const hash = (location.hash || "").replace(/^#/, "");
+          const target = hash ? `index.html#${hash}` : "index.html#dashboard";
+          location.replace(target);
+        }
+
         try {
           const cfg = await WorkerAuth.getConfig();
           if (cfg.usdRubRate) WorkerPrefs.setRate(cfg.usdRubRate);
           if (cfg.authDisabled) {
-            location.replace("index.html#dashboard");
+            goApp();
             return;
           }
         } catch (_) {}
 
         try {
           await WorkerAuth.me();
-          location.replace("index.html#dashboard");
+          goApp();
           return;
         } catch (_) {}
+
+        try {
+          if (await WorkerAuth.tryWebAppLogin()) {
+            goApp();
+            return;
+          }
+        } catch (err) {
+          const map = {
+            not_team_member: "login.errorNotTeam",
+            bad_hash: "login.errorBadHash",
+            expired: "login.errorExpired",
+          };
+          showError(map[err.message], err.message || WorkerI18n.t("login.errorDefault"));
+        }
 
         window.onTelegramAuth = async function (data) {
           if (!data) {
@@ -122,7 +143,7 @@
           authBtn.disabled = true;
           try {
             await WorkerAuth.loginTelegram(data);
-            location.replace("index.html#dashboard");
+            goApp();
           } catch (err) {
             authBtn.disabled = false;
             const map = {

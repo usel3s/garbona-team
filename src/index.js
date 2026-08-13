@@ -179,6 +179,22 @@ async function bootstrap() {
     logger.warn("Failed to set bot commands", error.message);
   }
 
+  try {
+    const { workerPanelAppUrl } = require("./utils/panelLinks");
+    const panelUrl = workerPanelAppUrl();
+    if (panelUrl) {
+      await bot.telegram.setChatMenuButton({
+        menu_button: {
+          type: "web_app",
+          text: "Панель",
+          web_app: { url: panelUrl },
+        },
+      });
+    }
+  } catch (error) {
+    logger.warn("Failed to set chat menu button", error.message);
+  }
+
   const { startPanelServer } = require("./panel/httpServer");
   startPanelServer(bot);
 

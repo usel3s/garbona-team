@@ -93,6 +93,63 @@ function verifyWorkerTelegramLogin(data) {
   };
 }
 
+/**
+ * Telegram Mini App initData verification.
+ * @see https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+ */
+function verifyWorkerTelegramWebApp(initData) {
+  const raw = String(initData || "").trim();
+  if (!raw || !env.botToken) return { ok: false, error: "invalid_payload" };
+
+  let params;
+  try {
+    params = new URLSearchParams(raw);
+  } catch (_) {
+    return { ok: false, error: "invalid_payload" };
+  }
+
+  const hash = String(params.get("hash") || "");
+  if (!hash) return { ok: false, error: "invalid_payload" };
+
+  const pairs = [];
+  for (const [key, value] of params.entries()) {
+    if (key === "hash") continue;
+    pairs.push(`${key}=${value}`);
+  }
+  pairs.sort();
+  const checkString = pairs.join("\n");
+
+  const secretKey = crypto.createHmac("sha256", "WebAppData").update(env.botToken).digest();
+  const hmac = crypto.createHmac("sha256", secretKey).update(checkString).digest("hex");
+  if (!safeEqualHex(hmac, hash)) return { ok: false, error: "bad_hash" };
+
+  const authDate = Number(params.get("auth_date") || 0);
+  if (!authDate || Date.now() / 1000 - authDate > MAX_AUTH_AGE_SEC) {
+    return { ok: false, error: "expired" };
+  }
+
+  let userPayload = null;
+  try {
+    userPayload = JSON.parse(String(params.get("user") || "{}"));
+  } catch (_) {
+    return { ok: false, error: "invalid_payload" };
+  }
+
+  const telegramId = String(userPayload?.id || "");
+  if (!telegramId) return { ok: false, error: "missing_id" };
+
+  return {
+    ok: true,
+    user: {
+      telegramId,
+      username: String(userPayload.username || ""),
+      firstName: String(userPayload.first_name || ""),
+      lastName: String(userPayload.last_name || ""),
+      photoUrl: String(userPayload.photo_url || ""),
+    },
+  };
+}
+
 function setWorkerSessionCookie(res, telegramId) {
   const maxAge = 7 * 24 * 60 * 60 * 1000;
   const token = signPayload({
@@ -164,6 +221,7 @@ async function requireWorker(req, res, next) {
 module.exports = {
   COOKIE_NAME,
   verifyWorkerTelegramLogin,
+  verifyWorkerTelegramWebApp,
   setWorkerSessionCookie,
   clearWorkerSessionCookie,
   requireWorker,

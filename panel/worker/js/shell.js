@@ -1,6 +1,12 @@
 (async function () {
   WorkerPrefs.init();
 
+  try {
+    const tg = WorkerAuth.getTelegramWebApp?.();
+    tg?.ready?.();
+    tg?.expand?.();
+  } catch (_) {}
+
   const user = await WorkerAuth.requireAuth();
   if (!user) return;
 

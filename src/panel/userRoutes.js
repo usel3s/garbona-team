@@ -2,6 +2,7 @@ const express = require("express");
 const { env } = require("../config/env");
 const {
   verifyWorkerTelegramLogin,
+  verifyWorkerTelegramWebApp,
   setWorkerSessionCookie,
   clearWorkerSessionCookie,
   requireWorker,
@@ -92,44 +93,66 @@ function createUserRouter(bot) {
       if (!result.ok) {
         return res.status(401).json({ error: result.error });
       }
-      const { user: tg } = result;
-      let user = await getUserByTelegramId(tg.telegramId);
-      if (!user) {
-        user = await ensureUser({
-          id: tg.telegramId,
-          username: tg.username,
-          first_name: tg.firstName,
-        });
-      } else {
-        user.username = tg.username || user.username;
-        user.firstName = tg.firstName || user.firstName;
-        await user.save();
-      }
-
-      const nextAvatar = resolveWorkerPhotoUrl(user, { loginPhotoUrl: tg.photoUrl });
-      if (nextAvatar && nextAvatar !== user.avatarUrl) {
-        user.avatarUrl = nextAvatar;
-        await user.save();
-      }
-
-      if (!canAccessWorkerPanel(user)) {
-        return res.status(403).json({ error: "not_team_member" });
-      }
-
-      setWorkerSessionCookie(res, tg.telegramId);
-      const currencyCtx = await getCurrencyContext();
-      return res.json({
-        ok: true,
-        user: {
-          ...serializeMember(user, currencyCtx),
-          photoUrl: resolveWorkerPhotoUrl(user),
-          isAdmin: isAdminTelegramId(user.telegramId),
-        },
-      });
+      return finishWorkerLogin(res, result.user);
     } catch (error) {
       return res.status(500).json({ error: error.message || "auth_failed" });
     }
   });
+
+  router.post("/auth/webapp", async (req, res) => {
+    try {
+      if (env.panelAuthDisabled) {
+        const telegramId = String(env.adminIds[0] || "").trim();
+        if (!telegramId) return res.status(500).json({ error: "no_admin_ids" });
+        setWorkerSessionCookie(res, telegramId);
+        return res.json({ ok: true });
+      }
+
+      const result = verifyWorkerTelegramWebApp(req.body?.initData || req.body?.init_data || "");
+      if (!result.ok) {
+        return res.status(401).json({ error: result.error });
+      }
+      return finishWorkerLogin(res, result.user);
+    } catch (error) {
+      return res.status(500).json({ error: error.message || "auth_failed" });
+    }
+  });
+
+  async function finishWorkerLogin(res, tg) {
+    let user = await getUserByTelegramId(tg.telegramId);
+    if (!user) {
+      user = await ensureUser({
+        id: tg.telegramId,
+        username: tg.username,
+        first_name: tg.firstName,
+      });
+    } else {
+      user.username = tg.username || user.username;
+      user.firstName = tg.firstName || user.firstName;
+      await user.save();
+    }
+
+    const nextAvatar = resolveWorkerPhotoUrl(user, { loginPhotoUrl: tg.photoUrl });
+    if (nextAvatar && nextAvatar !== user.avatarUrl) {
+      user.avatarUrl = nextAvatar;
+      await user.save();
+    }
+
+    if (!canAccessWorkerPanel(user)) {
+      return res.status(403).json({ error: "not_team_member" });
+    }
+
+    setWorkerSessionCookie(res, tg.telegramId);
+    const currencyCtx = await getCurrencyContext();
+    return res.json({
+      ok: true,
+      user: {
+        ...serializeMember(user, currencyCtx),
+        photoUrl: resolveWorkerPhotoUrl(user),
+        isAdmin: isAdminTelegramId(user.telegramId),
+      },
+    });
+  }
 
   router.post("/auth/logout", (_req, res) => {
     clearWorkerSessionCookie(res);

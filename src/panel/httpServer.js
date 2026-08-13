@@ -69,9 +69,8 @@ function csrfGuard(req, res, next) {
       return res.status(403).json({ error: "forbidden_origin" });
     }
   }
-  // Same-origin navigations / Telegram Login widget may omit Origin.
-  // Allow when no Origin/Referer only for auth bootstrap endpoints.
-  if (/\/auth\/telegram$/.test(req.path)) return next();
+  // Same-origin navigations / Telegram Login / Mini App may omit Origin.
+  if (/\/auth\/(telegram|webapp)$/.test(req.path)) return next();
   return res.status(403).json({ error: "forbidden_origin" });
 }
 
@@ -102,6 +101,7 @@ function startPanelServer(bot) {
   app.use(csrfGuard);
 
   app.use("/api/user/auth/telegram", rateLimitAuth);
+  app.use("/api/user/auth/webapp", rateLimitAuth);
   app.use("/api/auth/telegram", rateLimitAuth);
 
   app.use("/api/user", createUserRouter(bot));

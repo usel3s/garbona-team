@@ -611,9 +611,26 @@ async function finishTemplateCreate(ctx, user, code) {
 }
 
 function registerSitesHandlers(bot) {
+  // UI «Сайты» в боте скрыт — управление в веб-панели. Handlers ниже сохранены.
+  const SITES_BOT_UI_HIDDEN = true;
+
   bot.action("menu:sites", async (ctx) => {
     clearPendingInputs(ctx);
     await ctx.answerCbQuery();
+    if (SITES_BOT_UI_HIDDEN) {
+      const { sitesMovedToPanelKeyboard } = require("../keyboards/common");
+      await upsertBotMessage(
+        ctx,
+        [
+          `${pe("link")} <b>Сайты</b>`,
+          "",
+          "Управление доменами и ссылками перенесено в веб-панель.",
+          "Открой Mini App кнопкой ниже.",
+        ].join("\n"),
+        { reply_markup: sitesMovedToPanelKeyboard().reply_markup }
+      );
+      return;
+    }
     try {
       const user = await ensureUser(ctx.from);
       await showSitesHub(ctx, user);

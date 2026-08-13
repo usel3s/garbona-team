@@ -11,8 +11,29 @@ window.WorkerAuth = (function () {
     return WorkerAPI.post("/auth/telegram", payload);
   }
 
+  async function loginWebApp(initData) {
+    return WorkerAPI.post("/auth/webapp", { initData });
+  }
+
   async function logout() {
     return WorkerAPI.post("/auth/logout", {});
+  }
+
+  function getTelegramWebApp() {
+    return window.Telegram?.WebApp || null;
+  }
+
+  async function tryWebAppLogin() {
+    const tg = getTelegramWebApp();
+    if (!tg) return false;
+    try {
+      tg.ready?.();
+      tg.expand?.();
+    } catch (_) {}
+    const initData = String(tg.initData || "").trim();
+    if (!initData) return false;
+    await loginWebApp(initData);
+    return true;
   }
 
   async function requireAuth() {
@@ -20,6 +41,12 @@ window.WorkerAuth = (function () {
       const data = await me();
       return data.user;
     } catch (_) {
+      try {
+        if (await tryWebAppLogin()) {
+          const data = await me();
+          return data.user;
+        }
+      } catch (_) {}
       if (!/login\.html$/i.test(location.pathname)) {
         location.replace("login.html");
       }
@@ -27,5 +54,14 @@ window.WorkerAuth = (function () {
     }
   }
 
-  return { getConfig, me, loginTelegram, logout, requireAuth };
+  return {
+    getConfig,
+    me,
+    loginTelegram,
+    loginWebApp,
+    tryWebAppLogin,
+    getTelegramWebApp,
+    logout,
+    requireAuth,
+  };
 })();

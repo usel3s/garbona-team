@@ -41,6 +41,7 @@ async function renderHome(ctx) {
     [
       `${pe("home")} <b>Главное меню</b>`,
       "",
+      "Сайты и ссылки — в веб-панели.",
       "Выбери раздел ниже.",
     ].join("\n"),
     { reply_markup: participantPanelKeyboard(user.role === "admin").reply_markup }
