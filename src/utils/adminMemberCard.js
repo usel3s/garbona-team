@@ -1,7 +1,8 @@
 const { pe } = require("./emoji");
 const { formatDisplayAmount } = require("../services/currencyService");
+const { getProfitDashboard } = require("../services/profitService");
 
-function formatMemberCardHtml(member, currencyCtx) {
+function formatMemberCardHtml(member, currencyCtx, profitDash = null) {
   return [
     `${pe("profile")} <b>Управление пользователем</b>`,
     `<b>ID:</b> <code>${member.telegramId}</code>`,
@@ -27,6 +28,12 @@ function formatMemberCardHtml(member, currencyCtx) {
     member.isCaller ? `<b>Мин. профитов (прозвон):</b> ${member.callerMinProfits ?? 0}` : null,
     `<b>Заблокирован:</b> ${member.isBanned ? "Да" : "Нет"}`,
     `<b>Кошелёк:</b> ${formatDisplayAmount(member.totalProfit || 0, currencyCtx)}`,
+    profitDash
+      ? `<b>Профитов (записей):</b> ${profitDash.count} · <b>сумма:</b> ${formatDisplayAmount(profitDash.totalShare || 0, currencyCtx)}`
+      : null,
+    profitDash?.maxShare
+      ? `<b>Макс. профит:</b> ${formatDisplayAmount(profitDash.maxShare, currencyCtx)}`
+      : null,
     `<b>Процент:</b> ${member.profitPercent}%`,
     `<b>Служебный доступ:</b> ${
       member.panelUsername
@@ -38,4 +45,9 @@ function formatMemberCardHtml(member, currencyCtx) {
     .join("\n");
 }
 
-module.exports = { formatMemberCardHtml };
+async function renderMemberCardHtml(member, currencyCtx) {
+  const profitDash = await getProfitDashboard(member);
+  return formatMemberCardHtml(member, currencyCtx, profitDash);
+}
+
+module.exports = { formatMemberCardHtml, renderMemberCardHtml };

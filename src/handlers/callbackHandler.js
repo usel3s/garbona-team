@@ -24,6 +24,7 @@ const {
   memberActionKeyboard,
   memberPanelAccountKeyboard,
   memberPanelRecreateConfirmKeyboard,
+  memberProfitResetConfirmKeyboard,
   adminCancelKeyboard,
   adminResultKeyboard,
 } = require("../keyboards/admin");
@@ -48,6 +49,7 @@ const {
 const {
   getUserProfitStatsByTelegramId,
   getProfitDashboard,
+  resetUserProfitStats,
 } = require("../services/profitService");
 const {
   getAvailableUsd,
@@ -85,7 +87,7 @@ const { getProjectRulesLines } = require("../config/projectRules");
 const { logger, getRecentLogsText, DEFAULT_EXPORT_LINES } = require("../utils/logger");
 const { upsertBotMessage, upsertBotPhoto } = require("../utils/message");
 const { pe, btn } = require("../utils/emoji");
-const { formatMemberCardHtml } = require("../utils/adminMemberCard");
+const { formatMemberCardHtml, renderMemberCardHtml } = require("../utils/adminMemberCard");
 const { clearPendingInputs } = require("../utils/session");
 const { renderProfileImage } = require("../utils/profileImageRenderer");
 const ProfitTransaction = require("../models/ProfitTransaction");
@@ -1537,9 +1539,104 @@ function registerCallbackHandlers(bot) {
 
     await ctx.answerCbQuery();
     const currencyCtx = await getCurrencyContext();
-    await upsertBotMessage(ctx, formatMemberCardHtml(member, currencyCtx), {
+    await upsertBotMessage(ctx, await renderMemberCardHtml(member, currencyCtx), {
       reply_markup: memberActionKeyboard(telegramId, member.isBanned, member.isCurator, member.isCaller, member.isModerator).reply_markup,
     });
+  });
+
+  bot.action(/^admin:profit_reset:ok:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const telegramId = ctx.match[1];
+    await ctx.answerCbQuery();
+    try {
+      const result = await resetUserProfitStats(telegramId);
+      if (!result) {
+        await upsertBotMessage(ctx, `${pe("error")} Пользователь не найден.`, {
+          reply_markup: adminResultKeyboard("admin:users").reply_markup,
+        });
+        return;
+      }
+      const currencyCtx = await getCurrencyContext();
+      const lines = [
+        `${pe("success")} <b>Статистика профитов обнулена</b>`,
+        "",
+        `Удалено записей: <b>${result.removedCount}</b>`,
+        `Списано с кошелька: <b>${formatDisplayAmount(result.removedShare, currencyCtx)}</b>`,
+        `Новый баланс: <b>${formatDisplayAmount(result.newBalance, currencyCtx)}</b>`,
+        "",
+        await renderMemberCardHtml(result.user, currencyCtx),
+      ];
+      await upsertBotMessage(ctx, lines.join("\n"), {
+        reply_markup: memberActionKeyboard(
+          telegramId,
+          result.user.isBanned,
+          result.user.isCurator,
+          result.user.isCaller,
+          result.user.isModerator
+        ).reply_markup,
+      });
+    } catch (error) {
+      await upsertBotMessage(ctx, `${pe("error")} ${error.message}`, {
+        reply_markup: memberProfitResetConfirmKeyboard(telegramId).reply_markup,
+      });
+    }
+  });
+
+  bot.action(/^admin:profit_reset:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const telegramId = ctx.match[1];
+    const member = await getUserByTelegramId(telegramId);
+    if (!member) {
+      await ctx.answerCbQuery("Пользователь не найден", { show_alert: true });
+      return;
+    }
+    await ctx.answerCbQuery();
+    const currencyCtx = await getCurrencyContext();
+    const profitDash = await getProfitDashboard(member);
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("error")} <b>Обнулить статистику профитов?</b>`,
+        "",
+        `Участник: <code>${telegramId}</code> @${member.username || "—"}`,
+        `Записей профита: <b>${profitDash.count}</b>`,
+        `Сумма профитов: <b>${formatDisplayAmount(profitDash.totalShare, currencyCtx)}</b>`,
+        `Кошелёк сейчас: <b>${formatDisplayAmount(member.totalProfit || 0, currencyCtx)}</b>`,
+        "",
+        "Будут удалены все записи профита и с кошелька спишется их сумма.",
+        "Прямые пополнения кошелька без записей не затрагиваются.",
+      ].join("\n"),
+      { reply_markup: memberProfitResetConfirmKeyboard(telegramId).reply_markup }
+    );
+  });
+
+  bot.action(/^admin:profit_deduct:(.+)$/, async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const telegramId = ctx.match[1];
+    const member = await getUserByTelegramId(telegramId);
+    if (!member) {
+      await ctx.answerCbQuery("Пользователь не найден", { show_alert: true });
+      return;
+    }
+    ctx.session.adminInput = { type: "profit_deduct", telegramId };
+    await ctx.answerCbQuery();
+    const currencyCtx = await getCurrencyContext();
+    const profitDash = await getProfitDashboard(member);
+    await upsertBotMessage(
+      ctx,
+      [
+        `${pe("delete")} <b>Списание профитов</b>`,
+        "",
+        `Участник: <code>${telegramId}</code> @${member.username || "—"}`,
+        `Сейчас: <b>${profitDash.count}</b> записей на <b>${formatDisplayAmount(profitDash.totalShare, currencyCtx)}</b>`,
+        "",
+        "Введите сумму и количество через пробел.",
+        "Пример: <code>108 1</code> — списать последний профит (~$108, 1 запись).",
+        "",
+        "Удалятся последние N записей, с кошелька спишется их фактическая сумма.",
+      ].join("\n"),
+      { reply_markup: adminCancelKeyboard(`admin:member:${telegramId}`).reply_markup }
+    );
   });
 
   bot.action(/^admin:panelacc:recreate:ok:(.+)$/, async (ctx) => {

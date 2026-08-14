@@ -7,7 +7,7 @@ const {
   getUserByTelegramId,
   addWalletBalanceUsd,
 } = require("../services/userService");
-const { addProfitToUserByTelegramId } = require("../services/profitService");
+const { addProfitToUserByTelegramId, deductUserProfitStats } = require("../services/profitService");
 const { setGlobalWorkerPercent, setUsdRubRate } = require("../services/settingsService");
 const { enableTemplateById, renameTemplateById } = require("../services/adminSitesService");
 const { buildAdminTemplatesView, escapeAdminHtml } = require("../utils/adminTemplatesUi");
@@ -31,8 +31,8 @@ const {
 const { upsertBotMessage } = require("../utils/message");
 const { pe } = require("../utils/emoji");
 const { clearPendingInputs, isBotCommandText } = require("../utils/session");
-const { formatMemberCardHtml } = require("../utils/adminMemberCard");
-const { getCurrencyContext } = require("../services/currencyService");
+const { formatMemberCardHtml, renderMemberCardHtml } = require("../utils/adminMemberCard");
+const { getCurrencyContext, formatDisplayAmount } = require("../services/currencyService");
 const {
   walletAmountCancelKeyboard,
   withdrawConfirmKeyboard,
@@ -290,6 +290,7 @@ function registerTextHandlers(bot) {
       const cancelBack =
         adminInput?.type === "search_user" ||
         adminInput?.type === "profit" ||
+        adminInput?.type === "profit_deduct" ||
         adminInput?.type === "wallet_topup" ||
         adminInput?.type === "percent" ||
         adminInput?.type === "panel_bind" ||
@@ -313,7 +314,8 @@ function registerTextHandlers(bot) {
                 adminInput?.type === "curator_min_profits" ||
                 adminInput?.type === "caller_desc" ||
                 adminInput?.type === "caller_percent" ||
-                adminInput?.type === "caller_min_profits"
+                adminInput?.type === "caller_min_profits" ||
+                adminInput?.type === "profit_deduct"
               ? `admin:member:${adminInput.telegramId}`
             : adminInput?.type === "app_question_label" ||
                 adminInput?.type === "app_question_prompt"
@@ -450,6 +452,82 @@ function registerTextHandlers(bot) {
         });
         return;
       }
+      ctx.session.adminInput = null;
+      return;
+    }
+
+    if (adminInput?.type === "profit_deduct") {
+      const parts = String(text || "")
+        .trim()
+        .replace(/,/g, ".")
+        .split(/\s+/);
+      if (parts.length < 2) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Введите сумму и количество через пробел.\nПример: <code>108 1</code>`,
+          { reply_markup: adminCancelKeyboard(`admin:member:${adminInput.telegramId}`).reply_markup }
+        );
+        return;
+      }
+
+      const amountUsd = Number(parts[0]);
+      const count = Number(parts[1]);
+      if (!Number.isFinite(amountUsd) || amountUsd <= 0 || !Number.isFinite(count) || count < 1) {
+        await upsertBotMessage(
+          ctx,
+          `${pe("error")} Некорректный формат. Пример: <code>108.50 2</code>`,
+          { reply_markup: adminCancelKeyboard(`admin:member:${adminInput.telegramId}`).reply_markup }
+        );
+        return;
+      }
+
+      try {
+        const result = await deductUserProfitStats(adminInput.telegramId, {
+          amountUsd,
+          count: Math.floor(count),
+        });
+        if (!result) {
+          ctx.session.adminInput = null;
+          await upsertBotMessage(ctx, `${pe("error")} Пользователь не найден.`, {
+            reply_markup: adminBackKeyboard("admin:users").reply_markup,
+          });
+          return;
+        }
+
+        const currencyCtx = await getCurrencyContext();
+        const mismatch =
+          Math.abs(result.removedShare - result.requestedAmount) > 0.01
+            ? `\n${pe("info")} Запрошено ${formatDisplayAmount(result.requestedAmount, currencyCtx)}, фактически списано ${formatDisplayAmount(result.removedShare, currencyCtx)} (по удалённым записям).`
+            : "";
+
+        await upsertBotMessage(
+          ctx,
+          [
+            `${pe("success")} <b>Профиты списаны</b>`,
+            "",
+            `Удалено записей: <b>${result.removedCount}</b>`,
+            `Списано с кошелька: <b>${formatDisplayAmount(result.removedShare, currencyCtx)}</b>`,
+            `Новый баланс: <b>${formatDisplayAmount(result.newBalance, currencyCtx)}</b>${mismatch}`,
+            "",
+            await renderMemberCardHtml(result.user, currencyCtx),
+          ].join("\n"),
+          {
+            reply_markup: memberActionKeyboard(
+              result.user.telegramId,
+              result.user.isBanned,
+              result.user.isCurator,
+              result.user.isCaller,
+              result.user.isModerator
+            ).reply_markup,
+          }
+        );
+      } catch (error) {
+        await upsertBotMessage(ctx, `${pe("error")} ${error.message}`, {
+          reply_markup: adminCancelKeyboard(`admin:member:${adminInput.telegramId}`).reply_markup,
+        });
+        return;
+      }
+
       ctx.session.adminInput = null;
       return;
     }
@@ -910,7 +988,7 @@ function registerTextHandlers(bot) {
       }
       ctx.session.adminInput = null;
       const currencyCtx = await getCurrencyContext();
-      await upsertBotMessage(ctx, formatMemberCardHtml(member, currencyCtx), {
+      await upsertBotMessage(ctx, await renderMemberCardHtml(member, currencyCtx), {
         reply_markup: memberActionKeyboard(member.telegramId, member.isBanned, member.isCurator, member.isCaller, member.isModerator).reply_markup,
       });
       return;

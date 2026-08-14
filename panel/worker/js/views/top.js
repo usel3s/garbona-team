@@ -92,7 +92,26 @@ function renderTopRows(rows) {
   `;
 }
 
-function renderTopProfilePanel(profile, chartPeriod) {
+function ensureTopProfileDrawer() {
+  let drawer = document.getElementById("topProfileDrawer");
+  if (drawer && drawer.parentElement !== document.body) {
+    document.body.appendChild(drawer);
+  }
+  if (!drawer) {
+    drawer = document.createElement("div");
+    drawer.id = "topProfileDrawer";
+    drawer.className = "top-profile-drawer";
+    drawer.hidden = true;
+    drawer.innerHTML = `
+      <div class="top-profile-drawer-backdrop" id="topProfileBackdrop"></div>
+      <aside class="top-profile-drawer-sheet" id="topProfileSheet" role="dialog" aria-modal="true" aria-labelledby="topProfileTitle"></aside>
+    `;
+    document.body.appendChild(drawer);
+  }
+  return drawer;
+}
+
+function renderTopProfilePanel(profile) {
   const photo = topProfilePhotoUrl(profile);
   const bio = String(profile.bio || "").trim();
   const bioText = bio || WorkerI18n.t("top.bioEmpty");
@@ -101,12 +120,13 @@ function renderTopProfilePanel(profile, chartPeriod) {
 
   return `
     <div class="top-profile-panel">
+      <button type="button" class="btn btn-ghost top-profile-close" id="topProfileClose" aria-label="${WorkerFormat.escapeHtml(WorkerI18n.t("common.close"))}">✕</button>
       <div class="top-profile-head">
         <button type="button" class="top-profile-avatar-btn" id="topProfileAvatarBtn" ${tgUrl ? `data-tg-url="${WorkerFormat.escapeHtml(tgUrl)}"` : ""}>
           <img class="top-profile-avatar" src="${WorkerFormat.escapeHtml(photo)}" alt="" loading="lazy" />
         </button>
         <div class="top-profile-intro">
-          <button type="button" class="top-profile-name" id="topProfileNameBtn" ${tgUrl ? `data-tg-url="${WorkerFormat.escapeHtml(tgUrl)}"` : ""}>
+          <button type="button" class="top-profile-name" id="topProfileTitle" ${tgUrl ? `data-tg-url="${WorkerFormat.escapeHtml(tgUrl)}"` : ""}>
             ${WorkerFormat.escapeHtml(profile.displayName || "—")}
           </button>
           <div class="top-profile-role muted">${WorkerFormat.escapeHtml(profile.role || "")}</div>
@@ -125,7 +145,6 @@ function renderTopProfilePanel(profile, chartPeriod) {
             }
           </div>
         </div>
-        <button type="button" class="btn btn-ghost top-profile-close" id="topProfileClose" aria-label="${WorkerFormat.escapeHtml(WorkerI18n.t("common.close"))}">✕</button>
       </div>
 
       <div class="top-profile-bio">
@@ -164,6 +183,8 @@ WorkerViews.top = async function renderTop(ctx) {
   const state = WorkerViews.topState;
   let profileState = { telegramId: "", chartPeriod: "7d", loading: false };
 
+  ensureTopProfileDrawer();
+
   main.innerHTML = `
     <div class="page-head">
       <div>
@@ -175,20 +196,17 @@ WorkerViews.top = async function renderTop(ctx) {
     <div id="topBody">
       <div class="panel-empty">${WorkerFormat.escapeHtml(WorkerI18n.t("common.loading"))}</div>
     </div>
-    <div class="top-profile-drawer" id="topProfileDrawer" hidden>
-      <div class="top-profile-drawer-backdrop" id="topProfileBackdrop"></div>
-      <aside class="top-profile-drawer-sheet" id="topProfileSheet" role="dialog" aria-modal="true"></aside>
-    </div>
   `;
 
   function closeProfile() {
     const drawer = document.getElementById("topProfileDrawer");
     if (!drawer) return;
     drawer.classList.remove("is-open");
+    document.body.classList.remove("top-profile-open");
     window.setTimeout(() => {
       drawer.hidden = true;
       document.getElementById("topProfileSheet").innerHTML = "";
-    }, 200);
+    }, 220);
     profileState.telegramId = "";
   }
 
@@ -206,7 +224,12 @@ WorkerViews.top = async function renderTop(ctx) {
     document.getElementById("topProfileClose")?.addEventListener("click", closeProfile);
     document.getElementById("topProfileBackdrop")?.addEventListener("click", closeProfile);
 
-    ["topProfileAvatarBtn", "topProfileNameBtn"].forEach((id) => {
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") closeProfile();
+    };
+    document.addEventListener("keydown", onKeyDown, { once: true });
+
+    ["topProfileAvatarBtn", "topProfileTitle"].forEach((id) => {
       document.getElementById(id)?.addEventListener("click", (e) => {
         const url = e.currentTarget?.dataset?.tgUrl;
         if (url) openTelegram(url);
@@ -251,6 +274,7 @@ WorkerViews.top = async function renderTop(ctx) {
     if (!keepOpen) {
       sheet.innerHTML = `<div class="top-profile-loading panel-empty">${WorkerFormat.escapeHtml(WorkerI18n.t("common.loading"))}</div>`;
       drawer.hidden = false;
+      document.body.classList.add("top-profile-open");
       requestAnimationFrame(() => drawer.classList.add("is-open"));
     } else {
       const chart = document.getElementById("topProfileChart");
@@ -264,7 +288,7 @@ WorkerViews.top = async function renderTop(ctx) {
         `/top/profile/${encodeURIComponent(telegramId)}?chartPeriod=${encodeURIComponent(profileState.chartPeriod)}`,
         { force: true }
       );
-      sheet.innerHTML = renderTopProfilePanel(profile, profileState.chartPeriod);
+      sheet.innerHTML = renderTopProfilePanel(profile);
       bindProfileActions(profile);
     } catch (error) {
       if (window.WorkerToast) WorkerToast.error(error);

@@ -188,6 +188,10 @@ function memberActionKeyboard(
   }
   rows.push(
     [
+      btn("Списать профиты", `admin:profit_deduct:${memberTelegramId}`, "delete"),
+      btn("Обнулить статистику", `admin:profit_reset:${memberTelegramId}`, "delete"),
+    ],
+    [
       btn("Кикнуть", `admin:kick:${memberTelegramId}`, "delete"),
       btn(
         isBanned ? "Разблокировать" : "Забанить",
@@ -220,6 +224,13 @@ function memberPanelRecreateConfirmKeyboard(memberTelegramId) {
   ]);
 }
 
+function memberProfitResetConfirmKeyboard(memberTelegramId) {
+  return Markup.inlineKeyboard([
+    [btn("Да, обнулить", `admin:profit_reset:ok:${memberTelegramId}`, "error")],
+    [btn("Отмена", `admin:member:${memberTelegramId}`, "home")],
+  ]);
+}
+
 module.exports = {
   adminPanelKeyboard,
   adminUsersKeyboard,
@@ -236,4 +247,5 @@ module.exports = {
   memberActionKeyboard,
   memberPanelAccountKeyboard,
   memberPanelRecreateConfirmKeyboard,
+  memberProfitResetConfirmKeyboard,
 };
