@@ -26,7 +26,7 @@ const {
 } = require("../services/adminSitesService");
 const { listWorkerLogs, listWorkerTasks } = require("../services/workerPanelService");
 const { getWorkerOverview } = require("../services/workerDashboardService");
-const { getTopWorkers } = require("../services/topService");
+const { getTopWorkers, getTopWorkerProfile } = require("../services/topService");
 const { resolveWorkerPhotoUrl } = require("../utils/profilePhoto");
 const {
   createWithdrawalRequest,
@@ -235,6 +235,18 @@ function createUserRouter(bot) {
           count: Number(row.count || 0),
         })),
       });
+    } catch (error) {
+      res.status(error.status || 500).json({ error: error.message });
+    }
+  });
+
+  router.get("/top/profile/:telegramId", requireWorker, async (req, res) => {
+    try {
+      const chartPeriod = ["7d", "30d", "all"].includes(String(req.query.chartPeriod || ""))
+        ? String(req.query.chartPeriod)
+        : "7d";
+      const profile = await getTopWorkerProfile(req.params.telegramId, chartPeriod);
+      res.json(profile);
     } catch (error) {
       res.status(error.status || 500).json({ error: error.message });
     }

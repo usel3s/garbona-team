@@ -99,6 +99,7 @@ window.WorkerCharts = (function () {
     if (!container) return;
 
     const rows = Array.isArray(points) ? points : [];
+    const profitOnly = Boolean(options.profitOnly);
     let resizeObserver = null;
 
     function destroyChart() {
@@ -131,8 +132,8 @@ window.WorkerCharts = (function () {
     const pad = { top: 16, right: 48, bottom: 30, left: 32 };
     const H = 240;
 
-    let showLogs = true;
-    let showMafile = true;
+    let showLogs = !profitOnly;
+    let showMafile = !profitOnly;
     let showProfit = true;
     let logsLine;
     let mafileLine;
@@ -254,14 +255,14 @@ window.WorkerCharts = (function () {
         tip.hidden = true;
         tip.innerHTML = `
           <div class="dynamics-tooltip-date"></div>
-          <div class="dynamics-tooltip-row dynamics-tooltip-logs">
+          ${profitOnly ? "" : `<div class="dynamics-tooltip-row dynamics-tooltip-logs">
             <span class="dynamics-tooltip-swatch"></span>
             <span class="dynamics-tooltip-text"></span>
           </div>
           <div class="dynamics-tooltip-row dynamics-tooltip-mafile">
             <span class="dynamics-tooltip-swatch"></span>
             <span class="dynamics-tooltip-text"></span>
-          </div>
+          </div>`}
           <div class="dynamics-tooltip-row dynamics-tooltip-profit">
             <span class="dynamics-tooltip-swatch"></span>
             <span class="dynamics-tooltip-text"></span>
@@ -304,8 +305,10 @@ window.WorkerCharts = (function () {
 
       const grid = svg.querySelector(".dynamics-grid");
       grid.innerHTML = "";
-      countScale.ticks.forEach((tick) => {
-        const y = yCount(tick);
+      const gridScale = profitOnly ? amountScale : countScale;
+      const gridY = profitOnly ? yAmount : yCount;
+      gridScale.ticks.forEach((tick) => {
+        const y = gridY(tick);
         const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
         line.setAttribute("x1", pad.left);
         line.setAttribute("x2", pad.left + plotW);
@@ -322,15 +325,17 @@ window.WorkerCharts = (function () {
 
       const leftAxis = svg.querySelector(".dynamics-axis-left");
       leftAxis.innerHTML = "";
-      uniqueAxisLabels(countScale.ticks, formatCountTick).forEach(({ tick, label }) => {
-        const y = yCount(tick);
-        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        text.setAttribute("x", pad.left - 8);
-        text.setAttribute("y", y + 3);
-        text.setAttribute("text-anchor", "end");
-        text.textContent = label;
-        leftAxis.appendChild(text);
-      });
+      if (!profitOnly) {
+        uniqueAxisLabels(countScale.ticks, formatCountTick).forEach(({ tick, label }) => {
+          const y = yCount(tick);
+          const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          text.setAttribute("x", pad.left - 8);
+          text.setAttribute("y", y + 3);
+          text.setAttribute("text-anchor", "end");
+          text.textContent = label;
+          leftAxis.appendChild(text);
+        });
+      }
 
       const rightAxis = svg.querySelector(".dynamics-axis-right");
       rightAxis.innerHTML = "";
@@ -447,10 +452,12 @@ window.WorkerCharts = (function () {
       if (!row || !tip || !wrap) return;
       tip.hidden = false;
       tip.querySelector(".dynamics-tooltip-date").textContent = row.label || row.date || "";
-      tip.querySelector(".dynamics-tooltip-logs .dynamics-tooltip-text").textContent =
-        `${options.logsLabel || "Logs"}: ${row.logsCount || 0}`;
-      tip.querySelector(".dynamics-tooltip-mafile .dynamics-tooltip-text").textContent =
-        `${options.mafileLabel || "MaFile"}: ${row.mafileCount || 0}`;
+      if (!profitOnly) {
+        tip.querySelector(".dynamics-tooltip-logs .dynamics-tooltip-text").textContent =
+          `${options.logsLabel || "Logs"}: ${row.logsCount || 0}`;
+        tip.querySelector(".dynamics-tooltip-mafile .dynamics-tooltip-text").textContent =
+          `${options.mafileLabel || "MaFile"}: ${row.mafileCount || 0}`;
+      }
       tip.querySelector(".dynamics-tooltip-profit .dynamics-tooltip-text").textContent =
         `${options.profitLabel || "Profit"}: ${row.profitDisplay || row.profitUsd || 0}`;
 
@@ -463,5 +470,17 @@ window.WorkerCharts = (function () {
     requestAnimationFrame(() => requestAnimationFrame(scheduleDraw));
   }
 
-  return { renderDynamicsChart };
+  function renderProfitChart(container, points, options = {}) {
+    const rows = (Array.isArray(points) ? points : []).map((row) => ({
+      ...row,
+      profitUsd: Number(row.profitUsd || 0),
+      logsCount: 0,
+      mafileCount: 0,
+      label: row.label || WorkerFormat.chartDayLabel(row.date),
+      profitDisplay: row.profitDisplay || WorkerFormat.money(row.profitUsd),
+    }));
+    renderDynamicsChart(container, rows, { ...options, profitOnly: true });
+  }
+
+  return { renderDynamicsChart, renderProfitChart };
 })();

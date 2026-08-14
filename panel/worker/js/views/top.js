@@ -22,6 +22,44 @@ function renderTopEmptyState({ kind = "empty", title, text, actions = [] } = {})
     </div>`;
 }
 
+function topProfilePhotoUrl(profile) {
+  const photo = String(profile?.photoUrl || "").trim();
+  if (/^https?:\/\//i.test(photo)) return photo;
+  const username = String(profile?.username || "")
+    .trim()
+    .replace(/^@/, "");
+  if (/^[A-Za-z0-9_]{5,32}$/.test(username)) {
+    return `https://t.me/i/userpic/320/${username}.jpg`;
+  }
+  return "../assets/logo.png";
+}
+
+function topTelegramProfileUrl(profile) {
+  const username = String(profile?.username || "")
+    .trim()
+    .replace(/^@/, "");
+  if (/^[A-Za-z0-9_]{5,32}$/.test(username)) {
+    return `https://t.me/${username}`;
+  }
+  const id = String(profile?.telegramId || "").trim();
+  return id ? `tg://user?id=${id}` : "";
+}
+
+async function topCopyText(value, toastKey) {
+  const text = String(value || "").trim();
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    if (window.WorkerToast) {
+      WorkerToast.success(WorkerI18n.t(toastKey));
+    }
+  } catch (_) {
+    if (window.WorkerToast) {
+      WorkerToast.error(WorkerI18n.t("top.copyFailed"));
+    }
+  }
+}
+
 function renderTopRows(rows) {
   return `
     <div class="top-list">
@@ -31,17 +69,22 @@ function renderTopRows(rows) {
             row.rank === 1 ? "gold" : row.rank === 2 ? "silver" : row.rank === 3 ? "bronze" : "";
           const name = row.displayName || "—";
           const handle = row.username ? `@${row.username}` : "";
+          const clickable = !row.isAnonymous && row.telegramId;
           return `
-            <article class="top-row${row.isMe ? " is-me" : ""}${medal ? ` is-${medal}` : ""}">
+            <article
+              class="top-row${row.isMe ? " is-me" : ""}${medal ? ` is-${medal}` : ""}${clickable ? " is-clickable" : ""}"
+              ${clickable ? `data-top-id="${WorkerFormat.escapeHtml(row.telegramId)}" tabindex="0" role="button"` : ""}
+            >
               <div class="top-rank" aria-hidden="true">${row.rank}</div>
               <div class="top-who">
                 <div class="top-name">${WorkerFormat.escapeHtml(name)}${row.isMe ? ` <span class="top-me">${WorkerI18n.t("top.you")}</span>` : ""}</div>
-                ${handle ? `<div class="top-handle muted">${WorkerFormat.escapeHtml(handle)}</div>` : ""}
+                ${handle ? `<div class="top-handle muted">${WorkerFormat.escapeHtml(handle)}</div>` : row.isAnonymous ? `<div class="top-handle muted">${WorkerI18n.t("top.anonymousHint")}</div>` : ""}
               </div>
               <div class="top-stats">
                 <div class="top-amount">${WorkerFormat.escapeHtml(WorkerFormat.money(row.totalUsd || 0))}</div>
                 <div class="top-count muted">${WorkerI18n.t("top.profitsCount", { count: row.count || 0 })}</div>
               </div>
+              ${clickable ? `<span class="top-row-chevron muted" aria-hidden="true">›</span>` : ""}
             </article>`;
         })
         .join("")}
@@ -49,9 +92,77 @@ function renderTopRows(rows) {
   `;
 }
 
+function renderTopProfilePanel(profile, chartPeriod) {
+  const photo = topProfilePhotoUrl(profile);
+  const bio = String(profile.bio || "").trim();
+  const bioText = bio || WorkerI18n.t("top.bioEmpty");
+  const username = String(profile.username || "").trim();
+  const tgUrl = topTelegramProfileUrl(profile);
+
+  return `
+    <div class="top-profile-panel">
+      <div class="top-profile-head">
+        <button type="button" class="top-profile-avatar-btn" id="topProfileAvatarBtn" ${tgUrl ? `data-tg-url="${WorkerFormat.escapeHtml(tgUrl)}"` : ""}>
+          <img class="top-profile-avatar" src="${WorkerFormat.escapeHtml(photo)}" alt="" loading="lazy" />
+        </button>
+        <div class="top-profile-intro">
+          <button type="button" class="top-profile-name" id="topProfileNameBtn" ${tgUrl ? `data-tg-url="${WorkerFormat.escapeHtml(tgUrl)}"` : ""}>
+            ${WorkerFormat.escapeHtml(profile.displayName || "—")}
+          </button>
+          <div class="top-profile-role muted">${WorkerFormat.escapeHtml(profile.role || "")}</div>
+          <div class="top-profile-meta">
+            <button type="button" class="top-profile-chip" id="topProfileIdBtn" data-copy="${WorkerFormat.escapeHtml(profile.telegramId || "")}">
+              <span class="muted">${WorkerI18n.t("top.profileId")}</span>
+              <strong>${WorkerFormat.escapeHtml(profile.telegramId || "—")}</strong>
+            </button>
+            ${
+              username
+                ? `<button type="button" class="top-profile-chip" id="topProfileUsernameBtn" data-copy="@${WorkerFormat.escapeHtml(username)}">
+                    <span class="muted">${WorkerI18n.t("top.profileUsername")}</span>
+                    <strong>@${WorkerFormat.escapeHtml(username)}</strong>
+                  </button>`
+                : `<div class="top-profile-chip is-static muted">${WorkerI18n.t("top.noUsername")}</div>`
+            }
+          </div>
+        </div>
+        <button type="button" class="btn btn-ghost top-profile-close" id="topProfileClose" aria-label="${WorkerFormat.escapeHtml(WorkerI18n.t("common.close"))}">✕</button>
+      </div>
+
+      <div class="top-profile-bio">
+        <div class="top-profile-bio-label muted">${WorkerI18n.t("top.bioLabel")}</div>
+        <p class="top-profile-bio-text${bio ? "" : " is-empty"}">${WorkerFormat.escapeHtml(bioText)}</p>
+      </div>
+
+      <div class="top-profile-kpis">
+        <div class="top-profile-kpi">
+          <span>${WorkerI18n.t("top.daysInTeam")}</span>
+          <strong>${WorkerI18n.t("top.daysCount", { count: profile.daysInTeam || 0 })}</strong>
+        </div>
+        <div class="top-profile-kpi">
+          <span>${WorkerI18n.t("top.maxProfit")}</span>
+          <strong>${WorkerFormat.escapeHtml(WorkerFormat.money(profile.maxProfitUsd || 0))}</strong>
+        </div>
+        <div class="top-profile-kpi">
+          <span>${WorkerI18n.t("top.totalProfit")}</span>
+          <strong>${WorkerFormat.escapeHtml(WorkerFormat.money(profile.totalProfitUsd || 0))}</strong>
+        </div>
+      </div>
+
+      <section class="top-profile-chart-section">
+        <div class="top-profile-chart-head">
+          <h3>${WorkerI18n.t("top.chartTitle")}</h3>
+          <div id="topProfileChartPeriod" class="custom-select-host top-profile-chart-period"></div>
+        </div>
+        <div id="topProfileChart" class="chart-area top-profile-chart"></div>
+      </section>
+    </div>
+  `;
+}
+
 WorkerViews.top = async function renderTop(ctx) {
   const { main, user } = ctx;
   const state = WorkerViews.topState;
+  let profileState = { telegramId: "", chartPeriod: "7d", loading: false };
 
   main.innerHTML = `
     <div class="page-head">
@@ -64,7 +175,132 @@ WorkerViews.top = async function renderTop(ctx) {
     <div id="topBody">
       <div class="panel-empty">${WorkerFormat.escapeHtml(WorkerI18n.t("common.loading"))}</div>
     </div>
+    <div class="top-profile-drawer" id="topProfileDrawer" hidden>
+      <div class="top-profile-drawer-backdrop" id="topProfileBackdrop"></div>
+      <aside class="top-profile-drawer-sheet" id="topProfileSheet" role="dialog" aria-modal="true"></aside>
+    </div>
   `;
+
+  function closeProfile() {
+    const drawer = document.getElementById("topProfileDrawer");
+    if (!drawer) return;
+    drawer.classList.remove("is-open");
+    window.setTimeout(() => {
+      drawer.hidden = true;
+      document.getElementById("topProfileSheet").innerHTML = "";
+    }, 200);
+    profileState.telegramId = "";
+  }
+
+  function openTelegram(url) {
+    const href = String(url || "").trim();
+    if (!href) return;
+    if (window.Telegram?.WebApp?.openTelegramLink && href.startsWith("https://t.me/")) {
+      window.Telegram.WebApp.openTelegramLink(href);
+      return;
+    }
+    window.open(href, "_blank", "noopener,noreferrer");
+  }
+
+  function bindProfileActions(profile) {
+    document.getElementById("topProfileClose")?.addEventListener("click", closeProfile);
+    document.getElementById("topProfileBackdrop")?.addEventListener("click", closeProfile);
+
+    ["topProfileAvatarBtn", "topProfileNameBtn"].forEach((id) => {
+      document.getElementById(id)?.addEventListener("click", (e) => {
+        const url = e.currentTarget?.dataset?.tgUrl;
+        if (url) openTelegram(url);
+      });
+    });
+
+    document.getElementById("topProfileIdBtn")?.addEventListener("click", (e) => {
+      topCopyText(e.currentTarget?.dataset?.copy, "top.idCopied");
+    });
+    document.getElementById("topProfileUsernameBtn")?.addEventListener("click", (e) => {
+      topCopyText(e.currentTarget?.dataset?.copy, "top.usernameCopied");
+    });
+
+    WorkerDropdown.mount(document.getElementById("topProfileChartPeriod"), {
+      value: profileState.chartPeriod,
+      ariaLabel: WorkerI18n.t("top.chartPeriod"),
+      options: [
+        { value: "7d", label: WorkerI18n.t("top.period7d") },
+        { value: "30d", label: WorkerI18n.t("top.period30d") },
+        { value: "all", label: WorkerI18n.t("top.periodAll") },
+      ],
+      onChange: (value) => {
+        profileState.chartPeriod = value;
+        loadProfile(profile.telegramId, { keepOpen: true });
+      },
+    });
+
+    WorkerCharts.renderProfitChart(document.getElementById("topProfileChart"), profile.series || [], {
+      empty: WorkerI18n.t("top.chartEmpty"),
+      profitLabel: WorkerI18n.t("top.chartLegendProfit"),
+    });
+  }
+
+  async function loadProfile(telegramId, { keepOpen = false } = {}) {
+    const drawer = document.getElementById("topProfileDrawer");
+    const sheet = document.getElementById("topProfileSheet");
+    if (!drawer || !sheet || !telegramId) return;
+
+    profileState.telegramId = telegramId;
+    profileState.loading = true;
+
+    if (!keepOpen) {
+      sheet.innerHTML = `<div class="top-profile-loading panel-empty">${WorkerFormat.escapeHtml(WorkerI18n.t("common.loading"))}</div>`;
+      drawer.hidden = false;
+      requestAnimationFrame(() => drawer.classList.add("is-open"));
+    } else {
+      const chart = document.getElementById("topProfileChart");
+      if (chart) {
+        chart.innerHTML = `<div class="panel-empty">${WorkerFormat.escapeHtml(WorkerI18n.t("common.loading"))}</div>`;
+      }
+    }
+
+    try {
+      const profile = await WorkerAPI.get(
+        `/top/profile/${encodeURIComponent(telegramId)}?chartPeriod=${encodeURIComponent(profileState.chartPeriod)}`,
+        { force: true }
+      );
+      sheet.innerHTML = renderTopProfilePanel(profile, profileState.chartPeriod);
+      bindProfileActions(profile);
+    } catch (error) {
+      if (window.WorkerToast) WorkerToast.error(error);
+      sheet.innerHTML = renderTopEmptyState({
+        kind: "error",
+        title: WorkerI18n.t("top.profileErrorTitle"),
+        text:
+          (window.WorkerToast && WorkerToast.friendlyError(error)) ||
+          error.message ||
+          WorkerI18n.t("common.error"),
+        actions: [
+          `<button type="button" class="btn btn-ghost" id="topProfileRetry">${WorkerFormat.escapeHtml(WorkerI18n.t("common.retry"))}</button>`,
+          `<button type="button" class="btn btn-primary" id="topProfileDismiss">${WorkerFormat.escapeHtml(WorkerI18n.t("common.close"))}</button>`,
+        ],
+      });
+      document.getElementById("topProfileRetry")?.addEventListener("click", () =>
+        loadProfile(telegramId, { keepOpen: true })
+      );
+      document.getElementById("topProfileDismiss")?.addEventListener("click", closeProfile);
+    } finally {
+      profileState.loading = false;
+    }
+  }
+
+  function bindTopRowClicks() {
+    document.querySelectorAll(".top-row.is-clickable[data-top-id]").forEach((row) => {
+      const open = () => loadProfile(row.dataset.topId);
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open();
+        }
+      });
+    });
+  }
 
   async function load({ force = false } = {}) {
     const body = document.getElementById("topBody");
@@ -85,6 +321,7 @@ WorkerViews.top = async function renderTop(ctx) {
       }
       body.className = "section section-flush";
       body.innerHTML = renderTopRows(rows);
+      bindTopRowClicks();
       const meRow = rows.find((r) => r.isMe);
       if (!meRow && user?.telegramId) {
         const note = document.createElement("p");

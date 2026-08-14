@@ -3,9 +3,13 @@ const User = require("../models/User");
 const {
   getUserProfitStatsByTelegramId,
   getProfitDashboard,
+  groupUserProfits,
   daysWithTeam,
 } = require("./profitService");
-const { formatDisplayAmount } = require("./currencyService");
+const { getWorkerDailyProfitSeries } = require("./workerDashboardService");
+const { getUserByTelegramId } = require("./userService");
+const { getCurrencyContext, formatDisplayAmount } = require("./currencyService");
+const { resolveWorkerPhotoUrl } = require("../utils/profilePhoto");
 const { pe } = require("../utils/emoji");
 
 function periodSince(period) {
@@ -205,6 +209,79 @@ async function buildPublicProfileCaption(user, period, currencyCtx) {
   return lines.join("\n");
 }
 
+function formatChartDayLabel(isoDate) {
+  const d = new Date(`${isoDate}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return String(isoDate || "");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}`;
+}
+
+async function getProfileChartSeries(user, chartPeriod, currencyCtx) {
+  if (chartPeriod === "7d" || chartPeriod === "30d") {
+    const days = chartPeriod === "7d" ? 7 : 30;
+    const rows = await getWorkerDailyProfitSeries(user, days);
+    return rows.map((row) => ({
+      date: row.date,
+      label: formatChartDayLabel(row.date),
+      profitUsd: Number(row.totalUsd || 0),
+      profitDisplay: formatDisplayAmount(row.totalUsd, currencyCtx),
+    }));
+  }
+
+  const rows = await groupUserProfits(user, "month");
+  return [...rows]
+    .reverse()
+    .slice(-18)
+    .map((row) => {
+      const month = String(row.month).padStart(2, "0");
+      return {
+        date: `${row.year}-${month}-01`,
+        label: `${month}.${String(row.year).slice(-2)}`,
+        profitUsd: Number(row.total || 0),
+        profitDisplay: formatDisplayAmount(row.total, currencyCtx),
+      };
+    });
+}
+
+async function getTopWorkerProfile(telegramId, chartPeriod = "7d") {
+  const tid = String(telegramId || "").trim();
+  const user = tid ? await getUserByTelegramId(tid) : null;
+  if (!user) {
+    const error = new Error("Пользователь не найден");
+    error.status = 404;
+    throw error;
+  }
+  if (user.isAnonymous) {
+    const error = new Error("Профиль скрыт");
+    error.status = 403;
+    throw error;
+  }
+
+  const period = ["7d", "30d", "all"].includes(chartPeriod) ? chartPeriod : "7d";
+  const currencyCtx = await getCurrencyContext();
+  const [dash, series] = await Promise.all([
+    getProfitDashboard(user),
+    getProfileChartSeries(user, period, currencyCtx),
+  ]);
+
+  return {
+    telegramId: String(user.telegramId),
+    username: user.username || "",
+    firstName: user.firstName || "",
+    displayName: displayNameOf(user),
+    bio: String(user.bio || "").trim(),
+    photoUrl: resolveWorkerPhotoUrl(user),
+    role: roleLabelOf(user),
+    daysInTeam: dash.days,
+    totalProfitUsd: Number(dash.totalShare || 0),
+    maxProfitUsd: Number(dash.maxShare || 0),
+    operationsTotal: Number(dash.count || 0),
+    chartPeriod: period,
+    series,
+  };
+}
+
 async function getPublicProfileImageData(user) {
   if (!user || user.isAnonymous) return null;
   const dash = await getProfitDashboard(user);
@@ -219,6 +296,7 @@ async function getPublicProfileImageData(user) {
 
 module.exports = {
   getTopWorkers,
+  getTopWorkerProfile,
   buildTopWorkersHtml,
   buildPublicProfileCaption,
   getPublicProfileImageData,

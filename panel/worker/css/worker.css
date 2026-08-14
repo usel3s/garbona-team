@@ -1739,11 +1739,38 @@ table.data tbody tr.is-clickable:focus-visible td {
 }
 
 .event-card-dialog {
-  width: min(560px, calc(100vw - 32px));
+  width: min(560px, calc(100vw - 24px));
+  max-height: min(94dvh, calc(var(--tg-viewport-stable-height, 100dvh) - 12px));
 }
 
 .event-card-body {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.event-card-scroll {
+  display: flex;
+  flex-direction: column;
   gap: 14px;
+  padding: 14px 14px 10px;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+.event-card-sticky {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface);
 }
 
 .event-card-head {
@@ -1911,8 +1938,8 @@ table.data tbody tr.is-clickable:focus-visible td {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding-top: 2px;
-  border-top: 1px solid var(--line-soft);
+  padding-top: 0;
+  border-top: none;
 }
 
 .event-card-footer .btn-primary {
@@ -2802,11 +2829,19 @@ table.data tr:last-child td {
 
 .sites-dialog {
   width: min(440px, calc(100vw - 32px));
+  max-height: min(92dvh, calc(var(--tg-viewport-stable-height, 100dvh) - 24px));
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 0;
   background: var(--surface);
   color: var(--text);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sites-dialog[open] {
+  display: flex;
 }
 
 .sites-dialog-wide {
@@ -2822,6 +2857,13 @@ table.data tr:last-child td {
   flex-direction: column;
   gap: 10px;
   padding: 14px;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 .sites-add-body {
@@ -3507,22 +3549,28 @@ th.col-actions {
   }
 
   .app {
-    min-height: 100dvh;
-    overflow-x: clip;
+    min-height: var(--tg-viewport-stable-height, 100dvh);
+    height: var(--tg-viewport-stable-height, 100dvh);
+    overflow: hidden;
   }
 
   .shell {
-    min-height: 100dvh;
-    overflow-x: clip;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   .topbar {
     height: calc(48px + env(safe-area-inset-top, 0px));
     padding: env(safe-area-inset-top, 0px) 14px 0;
     gap: 10px;
+    flex-shrink: 0;
   }
 
   .menu-toggle {
+    display: inline-flex;
     width: 40px;
     height: 40px;
     border-radius: 10px;
@@ -3530,7 +3578,14 @@ th.col-actions {
 
   .main {
     max-width: none;
-    padding: 14px 14px calc(28px + env(safe-area-inset-bottom, 0px));
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    padding: 14px 14px calc(28px + env(safe-area-inset-bottom, 0px) + var(--tg-safe-bottom, 0px));
   }
 
   .page-greeting {
@@ -3640,14 +3695,28 @@ th.col-actions {
   }
 
   .sites-dialog {
-    width: min(420px, calc(100vw - 32px));
+    width: min(100vw - 16px, 420px);
     max-width: none;
+    max-height: min(94dvh, calc(var(--tg-viewport-stable-height, 100dvh) - 8px));
     margin: auto;
     border-radius: 14px;
   }
 
   .sites-dialog-body {
     padding: 16px;
+  }
+
+  .event-card-dialog {
+    width: calc(100vw - 16px);
+    max-height: min(96dvh, calc(var(--tg-viewport-stable-height, 100dvh) - 4px));
+  }
+
+  .event-card-scroll {
+    padding: 14px 14px 8px;
+  }
+
+  .event-card-sticky {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   }
 
   .sites-dialog-actions {

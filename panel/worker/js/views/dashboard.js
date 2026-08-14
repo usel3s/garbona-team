@@ -372,6 +372,10 @@ function ensureEventCardDialog() {
     dialog.remove();
     dialog = null;
   }
+  if (dialog && !dialog.querySelector(".event-card-scroll")) {
+    dialog.remove();
+    dialog = null;
+  }
   if (dialog) return dialog;
 
   dialog = document.createElement("dialog");
@@ -379,32 +383,36 @@ function ensureEventCardDialog() {
   dialog.className = "sites-dialog event-card-dialog";
   dialog.innerHTML = `
     <div class="sites-dialog-body event-card-body">
-      <div class="event-card-head">
-        <div class="event-card-head-text">
-          <h3 class="sites-dialog-title" id="eventCardTitle"></h3>
-          <p class="muted sites-dialog-sub" id="eventCardSubtitle"></p>
+      <div class="event-card-scroll">
+        <div class="event-card-head">
+          <div class="event-card-head-text">
+            <h3 class="sites-dialog-title" id="eventCardTitle"></h3>
+            <p class="muted sites-dialog-sub" id="eventCardSubtitle"></p>
+          </div>
+          <span class="badge" id="eventCardStatusBadge"></span>
         </div>
-        <span class="badge" id="eventCardStatusBadge"></span>
+
+        <div class="event-money-grid" id="eventCardMoney"></div>
+        <dl class="event-detail-grid" id="eventCardDetails"></dl>
+
+        <div class="event-block" id="eventCardGames" hidden></div>
+        <div class="event-block" id="eventCardItems" hidden></div>
+
+        <div class="inline-alert" id="eventCardError" style="display:none;"></div>
+        <div class="kpi-hint" id="eventCardHint"></div>
       </div>
 
-      <div class="event-money-grid" id="eventCardMoney"></div>
-      <dl class="event-detail-grid" id="eventCardDetails"></dl>
+      <div class="event-card-sticky">
+        <div class="event-card-tools" id="eventCardTools">
+          <button type="button" class="btn btn-ghost event-tool-btn" id="eventCardRefresh"></button>
+          <button type="button" class="btn btn-ghost event-tool-btn" id="eventCardCheckValid"></button>
+          <a class="btn btn-ghost event-tool-btn" id="eventCardSteam" hidden target="_blank" rel="noopener noreferrer"></a>
+        </div>
 
-      <div class="event-block" id="eventCardGames" hidden></div>
-      <div class="event-block" id="eventCardItems" hidden></div>
-
-      <div class="inline-alert" id="eventCardError" style="display:none;"></div>
-      <div class="kpi-hint" id="eventCardHint"></div>
-
-      <div class="event-card-tools" id="eventCardTools">
-        <button type="button" class="btn btn-ghost event-tool-btn" id="eventCardRefresh"></button>
-        <button type="button" class="btn btn-ghost event-tool-btn" id="eventCardCheckValid"></button>
-        <a class="btn btn-ghost event-tool-btn" id="eventCardSteam" hidden target="_blank" rel="noopener noreferrer"></a>
-      </div>
-
-      <div class="event-card-footer">
-        <button type="button" class="btn btn-ghost" id="eventCardClose"></button>
-        <button type="button" class="btn btn-primary" id="eventCardAction" hidden></button>
+        <div class="event-card-footer">
+          <button type="button" class="btn btn-ghost" id="eventCardClose"></button>
+          <button type="button" class="btn btn-primary" id="eventCardAction" hidden></button>
+        </div>
       </div>
     </div>
   `;

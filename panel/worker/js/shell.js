@@ -1,10 +1,31 @@
 (async function () {
   WorkerPrefs.init();
 
-  try {
+  function syncTelegramViewport() {
+    const root = document.documentElement;
     const tg = WorkerAuth.getTelegramWebApp?.();
-    tg?.ready?.();
-    tg?.expand?.();
+    if (!tg) {
+      root.style.setProperty("--tg-viewport-stable-height", `${window.innerHeight}px`);
+      return;
+    }
+    try {
+      tg.ready?.();
+      tg.expand?.();
+      const h = Number(tg.viewportStableHeight || tg.viewportHeight || window.innerHeight) || window.innerHeight;
+      root.style.setProperty("--tg-viewport-stable-height", `${h}px`);
+      const top = Number(tg.safeAreaInset?.top || tg.contentSafeAreaInset?.top || 0) || 0;
+      const bottom = Number(tg.safeAreaInset?.bottom || tg.contentSafeAreaInset?.bottom || 0) || 0;
+      root.style.setProperty("--tg-safe-top", `${top}px`);
+      root.style.setProperty("--tg-safe-bottom", `${bottom}px`);
+    } catch (_) {
+      root.style.setProperty("--tg-viewport-stable-height", `${window.innerHeight}px`);
+    }
+  }
+
+  syncTelegramViewport();
+  window.addEventListener("resize", syncTelegramViewport);
+  try {
+    WorkerAuth.getTelegramWebApp?.()?.onEvent?.("viewportChanged", syncTelegramViewport);
   } catch (_) {}
 
   const user = await WorkerAuth.requireAuth();
