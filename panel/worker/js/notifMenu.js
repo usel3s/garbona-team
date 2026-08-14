@@ -47,6 +47,45 @@ window.WorkerNotifMenu = (function () {
     if (menuDot) menuDot.hidden = !hasUnread;
   }
 
+  function severityClass(item) {
+    if (item.severity === "danger") return "is-danger";
+    if (item.severity === "warn") return "is-warn";
+    if (item.severity === "info") return "is-info";
+    return "";
+  }
+
+  function openExternalUrl(url) {
+    const href = String(url || "").trim();
+    if (!href) return;
+    const tg = window.Telegram?.WebApp;
+    if (tg?.openLink) {
+      tg.openLink(href);
+      return;
+    }
+    window.open(href, "_blank", "noopener,noreferrer");
+  }
+
+  function navigateNotifItem(btn) {
+    const linkType = String(btn.dataset.linkType || "").trim();
+    if (linkType === "view" && btn.dataset.linkView) {
+      setOpen(false);
+      document.querySelector(`.nav-item[data-view="${btn.dataset.linkView}"]`)?.click();
+      return;
+    }
+    if (linkType === "url" && btn.dataset.linkUrl) {
+      setOpen(false);
+      openExternalUrl(btn.dataset.linkUrl);
+      return;
+    }
+    if (btn.dataset.domainId) {
+      setOpen(false);
+      if (WorkerViews.sitesState) {
+        WorkerViews.sitesState.selectedId = Number(btn.dataset.domainId);
+      }
+      document.querySelector('.nav-item[data-view="sites"]')?.click();
+    }
+  }
+
   function renderItems(items) {
     const { list } = els();
     if (!list) return;
@@ -60,13 +99,17 @@ window.WorkerNotifMenu = (function () {
 
     list.innerHTML = items
       .map((item) => {
-        const sev = item.severity === "danger" ? "is-danger" : "is-warn";
+        const sev = severityClass(item);
+        const msgHtml = item.messageHtml
+          ? `<span class="notif-menu-msg notif-menu-msg-html">${item.messageHtml}</span>`
+          : `<span class="notif-menu-msg">${WorkerFormat.escapeHtml(item.message || "")}</span>`;
+        const linkType = item.linkType || (item.domainId ? "domain" : "none");
         return `
-          <button type="button" class="notif-menu-item ${sev}${item.read ? " is-read" : ""}" data-notif-id="${WorkerFormat.escapeHtml(String(item.id))}" data-domain-id="${WorkerFormat.escapeHtml(String(item.domainId || ""))}">
+          <button type="button" class="notif-menu-item ${sev}${item.read ? " is-read" : ""}" data-notif-id="${WorkerFormat.escapeHtml(String(item.id))}" data-link-type="${WorkerFormat.escapeHtml(linkType)}" data-link-view="${WorkerFormat.escapeHtml(String(item.linkView || ""))}" data-link-url="${WorkerFormat.escapeHtml(String(item.linkUrl || ""))}" data-domain-id="${WorkerFormat.escapeHtml(String(item.domainId || ""))}">
             <span class="notif-menu-dot" aria-hidden="true"></span>
             <span class="notif-menu-body">
               <span class="notif-menu-title">${WorkerFormat.escapeHtml(item.title || "")}</span>
-              <span class="notif-menu-msg">${WorkerFormat.escapeHtml(item.message || "")}</span>
+              ${msgHtml}
               <span class="notif-menu-time">${WorkerFormat.escapeHtml(
                 WorkerFormat.shortDayTime(item.createdAt)
               )}</span>
@@ -76,17 +119,20 @@ window.WorkerNotifMenu = (function () {
       .join("");
 
     list.querySelectorAll(".notif-menu-item").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        WorkerNotif.markRead(btn.dataset.notifId);
+      btn.addEventListener("click", async (e) => {
+        if (e.target.closest("a")) return;
+        const alertId = btn.dataset.notifId;
         btn.classList.add("is-read");
-        refreshBadgeOnly();
-        if (btn.dataset.domainId) {
-          setOpen(false);
-          if (WorkerViews.sitesState) {
-            WorkerViews.sitesState.selectedId = Number(btn.dataset.domainId);
-          }
-          document.querySelector('.nav-item[data-view="sites"]')?.click();
+        try {
+          const itemsAfter = await WorkerNotif.markRead(alertId);
+          if (itemsAfter) updateBadge(itemsAfter);
+          else refreshBadgeOnly();
+        } catch (error) {
+          if (window.WorkerToast) WorkerToast.error(error);
+          btn.classList.remove("is-read");
+          return;
         }
+        navigateNotifItem(btn);
       });
     });
   }
@@ -136,9 +182,10 @@ window.WorkerNotifMenu = (function () {
       e.stopPropagation();
       try {
         const items = await WorkerNotif.fetchAlerts({ force: true });
-        WorkerNotif.markAllRead(items.map((i) => i.id));
-        updateBadge(items.map((i) => ({ ...i, read: true })));
-        renderItems(items.map((i) => ({ ...i, read: true })));
+        const updated = await WorkerNotif.markAllRead(items.map((i) => i.id));
+        const next = updated || items.map((i) => ({ ...i, read: true }));
+        updateBadge(next);
+        renderItems(next);
         if (window.WorkerToast) WorkerToast.success(WorkerI18n.t("notif.marked"));
       } catch (error) {
         if (window.WorkerToast) WorkerToast.error(error);

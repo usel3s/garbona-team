@@ -44,6 +44,11 @@ const userSchema = new mongoose.Schema(
     customId: { type: String, default: "", maxlength: 12 },
     payoutMethod: { type: String, default: "" },
     payoutAddress: { type: String, default: "" },
+    /** Прочитанные алерты панели (id: paused:1, ban:1:google, …). */
+    panelReadAlertIds: { type: [String], default: [] },
+    /** Скрытые алерты для новых воркеров (история до первого входа). */
+    panelHiddenAlertIds: { type: [String], default: [] },
+    panelAlertsBootstrapped: { type: Boolean, default: false },
     teamReferrals: [
       {
         domainId: { type: Number, required: true },

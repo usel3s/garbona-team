@@ -617,7 +617,7 @@ MAC-10 | Neon Rider (Factory New)</textarea>
         <div class="settings-section">
           <div class="settings-section-label">
             <h3 class="settings-section-title">Рассылка</h3>
-            <span class="settings-section-desc">Текст всем участникам команды</span>
+            <span class="settings-section-desc">Текст всем участникам команды в Telegram</span>
           </div>
           <div class="settings-card">
             <div class="settings-card-body">
@@ -628,45 +628,59 @@ MAC-10 | Neon Rider (Factory New)</textarea>
         </div>
         <div class="settings-section">
           <div class="settings-section-label">
-            <h3 class="settings-section-title">Мануалы</h3>
+            <h3 class="settings-section-title">Уведомление в панель</h3>
+            <span class="settings-section-desc">WebApp и сайт · колокольчик у воркеров</span>
           </div>
           <div class="settings-card">
-            <div class="settings-row">
-              <div class="settings-row-text">
-                <div class="settings-row-title">Тред мануалов</div>
-                <div class="settings-row-desc">Создать / обновить форум-тред</div>
+            <div class="settings-card-body comms-panel-notify">
+              <label class="settings-field">
+                <span class="settings-field-label">Заголовок</span>
+                <input type="text" class="settings-input" id="panelNotifyTitle" maxlength="120" placeholder="Например: Обновление правил" />
+              </label>
+              <label class="settings-field">
+                <span class="settings-field-label">Текст (HTML)</span>
+                <textarea class="settings-textarea" id="panelNotifyMessage" placeholder="Поддерживаются &lt;b&gt;, &lt;i&gt;, &lt;u&gt;, &lt;code&gt;, &lt;a href=&quot;…&quot;&gt;"></textarea>
+              </label>
+              <div class="comms-panel-notify-row">
+                <label class="settings-field">
+                  <span class="settings-field-label">Важность</span>
+                  <select class="settings-input" id="panelNotifySeverity">
+                    <option value="info">Информация</option>
+                    <option value="warn">Внимание</option>
+                    <option value="danger">Важно</option>
+                  </select>
+                </label>
+                <label class="settings-field">
+                  <span class="settings-field-label">При клике</span>
+                  <select class="settings-input" id="panelNotifyLinkType">
+                    <option value="none">Никуда</option>
+                    <option value="view">Раздел панели</option>
+                    <option value="url">Внешняя ссылка</option>
+                    <option value="domain">Домен (сайты)</option>
+                  </select>
+                </label>
               </div>
-              <button type="button" class="btn-primary" id="manualsBtn">Запустить</button>
-            </div>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-label">
-            <h3 class="settings-section-title">Анонс</h3>
-            <span class="settings-section-desc">Канал info · -1003600501278</span>
-          </div>
-          <div class="settings-card">
-            <div class="settings-row">
-              <div class="settings-row-text">
-                <div class="settings-row-title">Первый анонс бота</div>
-                <div class="settings-row-desc">Сетка 3×3 (9 фото) + текст + кнопки</div>
-              </div>
-              <button type="button" class="btn-primary" id="launchAnnounceBtn">Опубликовать</button>
-            </div>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-label">
-            <h3 class="settings-section-title">Changelog</h3>
-            <span class="settings-section-desc">Нужен CHANGELOGS_CHAT_ID в .env</span>
-          </div>
-          <div class="settings-card">
-            <div class="settings-row">
-              <div class="settings-row-text">
-                <div class="settings-row-title">Опубликовать changelog</div>
-                <div class="settings-row-desc">Monospace (&lt;pre&gt;) в канал changelogs</div>
-              </div>
-              <button type="button" class="btn-primary" id="changelogBtn">Опубликовать</button>
+              <label class="settings-field" id="panelNotifyLinkViewWrap" hidden>
+                <span class="settings-field-label">Раздел</span>
+                <select class="settings-input" id="panelNotifyLinkView">
+                  <option value="dashboard">Главная</option>
+                  <option value="sites">Сайты</option>
+                  <option value="analytics">Аналитика</option>
+                  <option value="top">Топ</option>
+                  <option value="wallet">Кошелёк</option>
+                  <option value="settings">Настройки</option>
+                  <option value="support">Поддержка</option>
+                </select>
+              </label>
+              <label class="settings-field" id="panelNotifyLinkUrlWrap" hidden>
+                <span class="settings-field-label">URL</span>
+                <input type="url" class="settings-input" id="panelNotifyLinkUrl" placeholder="https://…" />
+              </label>
+              <label class="settings-field" id="panelNotifyLinkDomainWrap" hidden>
+                <span class="settings-field-label">ID домена</span>
+                <input type="number" class="settings-input" id="panelNotifyLinkDomain" min="1" placeholder="123" />
+              </label>
+              <button type="button" class="btn-primary" id="panelNotifyBtn">Отправить в панель</button>
             </div>
           </div>
         </div>
@@ -687,6 +701,21 @@ MAC-10 | Neon Rider (Factory New)</textarea>
         </div>
       </div>
     `;
+
+    const linkTypeEl = document.getElementById("panelNotifyLinkType");
+    const linkViewWrap = document.getElementById("panelNotifyLinkViewWrap");
+    const linkUrlWrap = document.getElementById("panelNotifyLinkUrlWrap");
+    const linkDomainWrap = document.getElementById("panelNotifyLinkDomainWrap");
+
+    function syncPanelNotifyLinkFields() {
+      const type = linkTypeEl?.value || "none";
+      if (linkViewWrap) linkViewWrap.hidden = type !== "view";
+      if (linkUrlWrap) linkUrlWrap.hidden = type !== "url";
+      if (linkDomainWrap) linkDomainWrap.hidden = type !== "domain";
+    }
+    linkTypeEl?.addEventListener("change", syncPanelNotifyLinkFields);
+    syncPanelNotifyLinkFields();
+
     document.getElementById("broadcastBtn").addEventListener("click", async () => {
       if (!confirm("Отправить рассылку всем?")) return;
       try {
@@ -698,34 +727,33 @@ MAC-10 | Neon Rider (Factory New)</textarea>
         toast(e.message, "error");
       }
     });
-    document.getElementById("manualsBtn").addEventListener("click", async () => {
+
+    document.getElementById("panelNotifyBtn").addEventListener("click", async () => {
+      if (!confirm("Отправить уведомление всем воркерам в панели?")) return;
+      const linkType = linkTypeEl?.value || "none";
+      const payload = {
+        title: document.getElementById("panelNotifyTitle")?.value || "",
+        messageHtml: document.getElementById("panelNotifyMessage")?.value || "",
+        severity: document.getElementById("panelNotifySeverity")?.value || "info",
+        linkType,
+      };
+      if (linkType === "view") {
+        payload.linkView = document.getElementById("panelNotifyLinkView")?.value || "";
+      } else if (linkType === "url") {
+        payload.linkUrl = document.getElementById("panelNotifyLinkUrl")?.value || "";
+      } else if (linkType === "domain") {
+        payload.linkDomainId = document.getElementById("panelNotifyLinkDomain")?.value || "";
+      }
       try {
-        await PanelAPI.post("/admin/comms/manuals-thread", {});
-        toast("Тред обновлён");
+        const data = await PanelAPI.post("/admin/comms/panel-notify", payload);
+        toast(`Уведомление отправлено · ${data.notification?.title || "ok"}`);
+        document.getElementById("panelNotifyTitle").value = "";
+        document.getElementById("panelNotifyMessage").value = "";
       } catch (e) {
         toast(e.message, "error");
       }
     });
-    document.getElementById("launchAnnounceBtn").addEventListener("click", async () => {
-      if (!confirm("Опубликовать анонс бота в info-канал?")) return;
-      try {
-        const data = await PanelAPI.post("/admin/comms/launch-announce", {});
-        const r = data.result || data;
-        toast(`Опубликовано · msg ${r.messageId || "ok"}${r.pinned ? " · закреплено" : ""}`);
-      } catch (e) {
-        toast(e.message, "error");
-      }
-    });
-    document.getElementById("changelogBtn").addEventListener("click", async () => {
-      if (!confirm("Опубликовать changelog в канал?")) return;
-      try {
-        const data = await PanelAPI.post("/admin/comms/changelog", {});
-        const r = data.result || data;
-        toast(`Changelog · msg ${r.messageId || "ok"}${r.pinned ? " · закреплено" : ""}`);
-      } catch (e) {
-        toast(e.message, "error");
-      }
-    });
+
     document.getElementById("dynamicPinBtn").addEventListener("click", async () => {
       try {
         const data = await PanelAPI.post("/admin/comms/dynamic-pin", {});

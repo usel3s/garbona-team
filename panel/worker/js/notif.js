@@ -1,10 +1,9 @@
 window.WorkerNotif = (function () {
   const READ_KEY = "worker_notif_read_v1";
-  const HIDDEN_KEY = "worker_notif_hidden_v1";
-  const BOOT_KEY = "worker_notif_boot_v2";
-  const NEW_USER_MS = 7 * 24 * 60 * 60 * 1000;
+  const MIGRATED_KEY = "worker_notif_migrated_v1";
 
-  let userCtx = { telegramId: "anon", createdAt: null };
+  let userCtx = { telegramId: "anon" };
+  let migratePromise = null;
 
   function userScope() {
     return String(userCtx.telegramId || "anon");
@@ -14,9 +13,9 @@ window.WorkerNotif = (function () {
     return `${base}:${userScope()}`;
   }
 
-  function readIdSet(base) {
+  function readLocalIdSet() {
     try {
-      const raw = localStorage.getItem(storageKey(base));
+      const raw = localStorage.getItem(storageKey(READ_KEY));
       const arr = raw ? JSON.parse(raw) : [];
       return new Set(Array.isArray(arr) ? arr.map(String) : []);
     } catch (_) {
@@ -24,64 +23,65 @@ window.WorkerNotif = (function () {
     }
   }
 
-  function writeIdSet(base, set) {
+  function clearLocalReadIds() {
     try {
-      localStorage.setItem(storageKey(base), JSON.stringify([...set].slice(-300)));
+      localStorage.removeItem(storageKey(READ_KEY));
     } catch (_) {}
   }
 
-  function isBootstrapped() {
+  function isMigrated() {
     try {
-      return localStorage.getItem(storageKey(BOOT_KEY)) === "1";
+      return localStorage.getItem(storageKey(MIGRATED_KEY)) === "1";
     } catch (_) {
       return false;
     }
   }
 
-  function markBootstrapped() {
+  function markMigrated() {
     try {
-      localStorage.setItem(storageKey(BOOT_KEY), "1");
+      localStorage.setItem(storageKey(MIGRATED_KEY), "1");
     } catch (_) {}
   }
 
-  function isNewUser() {
-    const created = userCtx.createdAt ? new Date(userCtx.createdAt).getTime() : 0;
-    if (!Number.isFinite(created) || created <= 0) return true;
-    return Date.now() - created < NEW_USER_MS;
+  async function migrateLocalReadState() {
+    if (isMigrated()) return;
+    const ids = [...readLocalIdSet()];
+    markMigrated();
+    clearLocalReadIds();
+    if (!ids.length) return;
+    try {
+      await WorkerAPI.post("/alerts/read", { ids });
+      WorkerAPI.bust("/alerts");
+    } catch (_) {
+      /* server is source of truth; ignore migration errors */
+    }
   }
 
-  /**
-   * New workers: on first open, hide the current alert snapshot so
-   * historical bans/pauses are not shown. Later alerts (new ids) appear normally.
-   * Existing workers: no hiding — only read/unread state.
-   */
-  function bootstrapIfNeeded(items) {
-    if (isBootstrapped()) return;
-    markBootstrapped();
-    if (!isNewUser()) return;
-    const hidden = readIdSet(HIDDEN_KEY);
-    (items || []).forEach((item) => hidden.add(String(item.id)));
-    writeIdSet(HIDDEN_KEY, hidden);
+  async function ensureMigrated() {
+    if (!migratePromise) {
+      migratePromise = migrateLocalReadState().finally(() => {
+        migratePromise = null;
+      });
+    }
+    await migratePromise;
   }
 
-  function markRead(id) {
-    const set = readIdSet(READ_KEY);
-    set.add(String(id));
-    writeIdSet(READ_KEY, set);
+  async function persistRead(ids) {
+    const list = [...new Set((ids || []).map(String).filter(Boolean))];
+    if (!list.length) return;
+    const data = await WorkerAPI.post("/alerts/read", { ids: list });
+    WorkerAPI.bust("/alerts");
+    return Array.isArray(data?.alerts) ? data.alerts : null;
   }
 
-  function markAllRead(ids) {
-    const set = readIdSet(READ_KEY);
-    (ids || []).forEach((id) => set.add(String(id)));
-    writeIdSet(READ_KEY, set);
+  async function markRead(id) {
+    const alertId = String(id || "").trim();
+    if (!alertId) return null;
+    return persistRead([alertId]);
   }
 
-  function isRead(id) {
-    return readIdSet(READ_KEY).has(String(id));
-  }
-
-  function isHidden(id) {
-    return readIdSet(HIDDEN_KEY).has(String(id));
+  async function markAllRead(ids) {
+    return persistRead(ids || []);
   }
 
   function unreadCount(items) {
@@ -89,28 +89,20 @@ window.WorkerNotif = (function () {
   }
 
   async function fetchAlerts({ force = false } = {}) {
+    await ensureMigrated();
     const data = await WorkerAPI.get("/alerts", { force });
-    const raw = Array.isArray(data?.alerts) ? data.alerts : [];
-    bootstrapIfNeeded(raw);
-    return raw
-      .filter((item) => !isHidden(item.id))
-      .map((item) => ({
-        ...item,
-        read: isRead(item.id),
-      }));
+    return Array.isArray(data?.alerts) ? data.alerts : [];
   }
 
-  function setUserContext(userOrId, createdAt) {
+  function setUserContext(userOrId) {
     if (userOrId && typeof userOrId === "object") {
       userCtx = {
         telegramId: String(userOrId.telegramId || "anon"),
-        createdAt: userOrId.createdAt || null,
       };
       return;
     }
     userCtx = {
       telegramId: userOrId ? String(userOrId) : "anon",
-      createdAt: createdAt || null,
     };
   }
 
@@ -118,7 +110,6 @@ window.WorkerNotif = (function () {
     fetchAlerts,
     markRead,
     markAllRead,
-    isRead,
     unreadCount,
     setUserContext,
   };

@@ -27,6 +27,7 @@ const {
 const { listWorkerLogs, listWorkerTasks } = require("../services/workerPanelService");
 const { getWorkerOverview } = require("../services/workerDashboardService");
 const { getTopWorkers, getTopWorkerProfile } = require("../services/topService");
+const { getWorkerAlerts, markWorkerAlertsRead } = require("../services/workerAlertsService");
 const { resolveWorkerPhotoUrl } = require("../utils/profilePhoto");
 const {
   createWithdrawalRequest,
@@ -254,46 +255,19 @@ function createUserRouter(bot) {
 
   router.get("/alerts", requireWorker, async (req, res) => {
     try {
-      const payload = await listDomains(req.worker, { light: true });
-      const domains = payload?.domains || [];
-      const alerts = [];
-      for (const domain of domains) {
-        const domainName = String(domain.domain || domain.id || "domain");
-        if (domain.isPaused) {
-          alerts.push({
-            id: `paused:${domain.id}`,
-            type: "paused",
-            severity: "warn",
-            title: domainName,
-            message: "Домен на паузе — ссылки не работают",
-            domainId: domain.id,
-            createdAt: domain.updatedAt || domain.createdAt || null,
-          });
-        }
-        const checks = domain.banChecks || {};
-        for (const key of ["google", "cloudflare", "whois", "yandex", "steam"]) {
-          if (checks[key]?.banned) {
-            alerts.push({
-              id: `ban:${domain.id}:${key}`,
-              type: "ban",
-              severity: "danger",
-              title: domainName,
-              message: `Бан: ${key}`,
-              domainId: domain.id,
-              banType: key,
-              createdAt: checks.updatedAt || domain.updatedAt || null,
-            });
-          }
-        }
-      }
-      alerts.sort((a, b) => {
-        const severityRank = { danger: 0, warn: 1, info: 2 };
-        const sa = severityRank[a.severity] ?? 9;
-        const sb = severityRank[b.severity] ?? 9;
-        if (sa !== sb) return sa - sb;
-        return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
-      });
+      const alerts = await getWorkerAlerts(req.worker);
       res.json({ alerts, count: alerts.length });
+    } catch (error) {
+      res.status(error.status || 400).json({ error: error.message });
+    }
+  });
+
+  router.post("/alerts/read", requireWorker, async (req, res) => {
+    try {
+      const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+      await markWorkerAlertsRead(req.worker, ids);
+      const alerts = await getWorkerAlerts(req.worker);
+      res.json({ ok: true, alerts, count: alerts.length });
     } catch (error) {
       res.status(error.status || 400).json({ error: error.message });
     }

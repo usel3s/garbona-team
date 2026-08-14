@@ -76,6 +76,7 @@ const { seedManualsThread } = require("../services/manualsThreadService");
 const { publishLaunchAnnounce } = require("../services/launchAnnounceService");
 const { publishChangelog } = require("../services/changelogService");
 const { publishOrRefreshDynamicPin } = require("../services/dynamicPinService");
+const { createPanelNotification } = require("../services/panelNotificationService");
 const { fetchSteamAccountById, listSteamAccountsForAdmin } = require("../services/steamLogAdminService");
 const { sendFakeSteamProfit, sendFakeSteamLog } = require("../services/steamMonitorService");
 const { resolveFakeProfitSevenSkinQueries } = require("../services/steamMarketLookup");
@@ -696,6 +697,24 @@ function createPanelRouter(bot) {
       res.json({ count: recipients.length });
     } catch (error) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  router.post("/admin/comms/panel-notify", requireAdmin, async (req, res) => {
+    try {
+      const doc = await createPanelNotification(req.body || {}, req.adminTelegramId);
+      res.json({
+        ok: true,
+        notification: {
+          id: String(doc._id),
+          title: doc.title,
+          severity: doc.severity,
+          linkType: doc.linkType,
+          createdAt: doc.createdAt,
+        },
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
     }
   });
 

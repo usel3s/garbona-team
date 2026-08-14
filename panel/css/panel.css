@@ -1769,6 +1769,39 @@ table.data .muted {
   gap: 12px;
 }
 
+.comms-panel-notify {
+  gap: 14px;
+}
+
+.comms-panel-notify-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-field-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.comms-panel-notify .settings-input,
+.comms-panel-notify .settings-textarea {
+  width: 100%;
+}
+
+@media (max-width: 720px) {
+  .comms-panel-notify-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .period-pills {
   display: inline-flex;
   gap: 6px;

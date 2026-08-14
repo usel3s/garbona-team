@@ -106,6 +106,57 @@ function classifyStatus(row) {
   return status || "—";
 }
 
+function pickVacCount(source) {
+  if (!source || typeof source !== "object") return 0;
+  const keys = ["vacBans", "vacBan", "numberOfVACBans", "numberOfVacBans", "vacCount", "VACBans"];
+  for (const key of keys) {
+    const n = Number(source[key]);
+    if (Number.isFinite(n) && n > 0) return Math.floor(n);
+  }
+  if (source.hasVac === true || source.vac === true) return 1;
+  return 0;
+}
+
+function extractVacGames(account) {
+  const games = Array.isArray(account?.gamesInfo) ? account.gamesInfo.filter(Boolean) : [];
+  return games
+    .filter((game) => game.vac || game.vacBanned || game.hasVac || game.vacBan)
+    .map((game) => String(game.name || `App ${game.appid || "?"}`));
+}
+
+function extractVacInfo(account) {
+  if (!account) return null;
+
+  const steam = account.steamInfo || {};
+  let count = Math.max(pickVacCount(account), pickVacCount(steam));
+  const games = extractVacGames(account);
+
+  if (games.length) count = Math.max(count, games.length);
+
+  const banList = account.bans || steam.bans || account.vacGames || steam.vacGames;
+  if (Array.isArray(banList)) {
+    const vacFromBans = banList.filter((ban) => {
+      const type = String(ban?.type || ban?.banType || ban?.kind || "").toLowerCase();
+      return type.includes("vac") || ban?.vac === true;
+    });
+    if (vacFromBans.length) {
+      count = Math.max(count, vacFromBans.length);
+      vacFromBans.forEach((ban) => {
+        const name = ban.game || ban.gameName || ban.name;
+        if (name) games.push(String(name));
+      });
+    }
+  }
+
+  const uniqueGames = [...new Set(games.filter(Boolean))];
+  if (count <= 0 && !uniqueGames.length) return null;
+
+  return {
+    count: count || uniqueGames.length,
+    games: uniqueGames,
+  };
+}
+
 async function assertOwnedLog(worker, sourceId) {
   const id = String(sourceId || "").trim();
   if (!id) throw asError("source_id_required");
@@ -193,6 +244,7 @@ function buildDetail({ id, account, steamLog, inventory }) {
     processStatus: String(steamLog?.processStatus || "none"),
     logKind: String(steamLog?.logKind || ""),
     eventType: /mafile/i.test(status) || steamLog?.logKind === "mafile" ? "mafile" : "log",
+    vac: extractVacInfo(account),
   };
 }
 

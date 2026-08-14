@@ -4,6 +4,10 @@ window.WorkerDropdown = (function () {
   function getPortalRoot(container) {
     const dialog = container.closest("dialog");
     if (dialog?.open) return dialog;
+    const eventDrawer = container.closest(".event-card-drawer.is-open");
+    if (eventDrawer) {
+      return eventDrawer.querySelector(".event-card-drawer-sheet") || eventDrawer;
+    }
     return document.body;
   }
 

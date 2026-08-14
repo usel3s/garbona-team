@@ -366,64 +366,99 @@ function requestStatusLabel(kind, status) {
   return "";
 }
 
-function ensureEventCardDialog() {
-  let dialog = document.getElementById("eventCardDialog");
-  if (dialog && !dialog.querySelector("#eventCardGames")) {
-    dialog.remove();
-    dialog = null;
-  }
-  if (dialog && !dialog.querySelector(".event-card-scroll")) {
-    dialog.remove();
-    dialog = null;
-  }
-  if (dialog) return dialog;
+function ensureEventCardDrawer() {
+  document.getElementById("eventCardDialog")?.remove();
 
-  dialog = document.createElement("dialog");
-  dialog.id = "eventCardDialog";
-  dialog.className = "sites-dialog event-card-dialog";
-  dialog.innerHTML = `
-    <div class="sites-dialog-body event-card-body">
-      <div class="event-card-scroll">
-        <div class="event-card-head">
-          <div class="event-card-head-text">
-            <h3 class="sites-dialog-title" id="eventCardTitle"></h3>
-            <p class="muted sites-dialog-sub" id="eventCardSubtitle"></p>
+  let drawer = document.getElementById("eventCardDrawer");
+  if (drawer && drawer.parentElement !== document.body) {
+    document.body.appendChild(drawer);
+  }
+  if (!drawer) {
+    drawer = document.createElement("div");
+    drawer.id = "eventCardDrawer";
+    drawer.className = "event-card-drawer";
+    drawer.hidden = true;
+    drawer.innerHTML = `
+      <div class="event-card-drawer-backdrop" id="eventCardBackdrop"></div>
+      <aside class="event-card-drawer-sheet sites-dialog event-card-dialog" id="eventCardSheet" role="dialog" aria-modal="true" aria-labelledby="eventCardTitle">
+        <div class="sites-dialog-body event-card-body">
+          <div class="event-card-scroll">
+            <div class="event-card-head">
+              <div class="event-card-head-text">
+                <h3 class="sites-dialog-title" id="eventCardTitle"></h3>
+                <p class="muted sites-dialog-sub" id="eventCardSubtitle"></p>
+              </div>
+              <div class="event-card-badges">
+                <span class="badge" id="eventCardStatusBadge"></span>
+                <span class="badge badge-vac" id="eventCardVacBadge" hidden></span>
+              </div>
+            </div>
+
+            <div class="event-money-grid" id="eventCardMoney"></div>
+            <dl class="event-detail-grid" id="eventCardDetails"></dl>
+
+            <div class="event-block" id="eventCardGames" hidden></div>
+            <div class="event-block" id="eventCardItems" hidden></div>
+
+            <div class="inline-alert" id="eventCardError" style="display:none;"></div>
+            <div class="kpi-hint" id="eventCardHint"></div>
           </div>
-          <span class="badge" id="eventCardStatusBadge"></span>
+
+          <div class="event-card-sticky">
+            <div class="event-card-tools" id="eventCardTools">
+              <button type="button" class="btn btn-ghost event-tool-btn" id="eventCardRefresh"></button>
+              <button type="button" class="btn btn-ghost event-tool-btn" id="eventCardCheckValid"></button>
+              <a class="btn btn-ghost event-tool-btn" id="eventCardSteam" hidden target="_blank" rel="noopener noreferrer"></a>
+            </div>
+
+            <div class="event-card-footer">
+              <button type="button" class="btn btn-ghost" id="eventCardClose"></button>
+              <button type="button" class="btn btn-primary" id="eventCardAction" hidden></button>
+            </div>
+          </div>
         </div>
+      </aside>
+    `;
+    document.body.appendChild(drawer);
+    drawer.querySelector("#eventCardBackdrop")?.addEventListener("click", closeEventCard);
+    drawer.querySelector("#eventCardClose")?.addEventListener("click", closeEventCard);
+  }
+  return drawer;
+}
 
-        <div class="event-money-grid" id="eventCardMoney"></div>
-        <dl class="event-detail-grid" id="eventCardDetails"></dl>
+function eventCardRoot() {
+  const drawer = ensureEventCardDrawer();
+  return drawer.querySelector("#eventCardSheet") || drawer;
+}
 
-        <div class="event-block" id="eventCardGames" hidden></div>
-        <div class="event-block" id="eventCardItems" hidden></div>
+function closeEventCard() {
+  const drawer = document.getElementById("eventCardDrawer");
+  if (!drawer) return;
+  WorkerDropdown.close();
+  drawer.classList.remove("is-open");
+  document.body.classList.remove("event-card-open");
+  window.setTimeout(() => {
+    if (!drawer.classList.contains("is-open")) drawer.hidden = true;
+  }, 220);
+}
 
-        <div class="inline-alert" id="eventCardError" style="display:none;"></div>
-        <div class="kpi-hint" id="eventCardHint"></div>
-      </div>
+function renderVacDetailValue(vac) {
+  if (!vac) return "";
+  if (Array.isArray(vac.games) && vac.games.length) {
+    return `<span class="badge badge-vac">${WorkerFormat.escapeHtml(vac.games.join(", "))}</span>`;
+  }
+  const count = Number(vac.count) || 1;
+  return `<span class="badge badge-vac">${WorkerFormat.escapeHtml(
+    WorkerI18n.t("dashboard.vacCount", { count }) || `VAC ×${count}`
+  )}</span>`;
+}
 
-      <div class="event-card-sticky">
-        <div class="event-card-tools" id="eventCardTools">
-          <button type="button" class="btn btn-ghost event-tool-btn" id="eventCardRefresh"></button>
-          <button type="button" class="btn btn-ghost event-tool-btn" id="eventCardCheckValid"></button>
-          <a class="btn btn-ghost event-tool-btn" id="eventCardSteam" hidden target="_blank" rel="noopener noreferrer"></a>
-        </div>
-
-        <div class="event-card-footer">
-          <button type="button" class="btn btn-ghost" id="eventCardClose"></button>
-          <button type="button" class="btn btn-primary" id="eventCardAction" hidden></button>
-        </div>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(dialog);
-
-  dialog.querySelector("#eventCardClose")?.addEventListener("click", () => dialog.close());
-  dialog.addEventListener("click", (e) => {
-    if (e.target === dialog) dialog.close();
-  });
-
-  return dialog;
+function renderVacBadgeLabel(vac) {
+  if (!vac) return "";
+  const count = Number(vac.count) || 1;
+  return count > 1
+    ? WorkerI18n.t("dashboard.vacShortCount", { count }) || `VAC ×${count}`
+    : WorkerI18n.t("dashboard.vacShort") || "VAC";
 }
 
 function renderEventDetailItem(label, value) {
@@ -525,6 +560,7 @@ function mergeEventCache(detail) {
       steamProfileUrl: detail.steamProfileUrl || cached.steamProfileUrl,
       level: detail.level ?? cached.level,
       country: detail.country || cached.country,
+      vac: detail.vac ?? cached.vac,
     });
     return cached;
   }
@@ -534,13 +570,21 @@ function mergeEventCache(detail) {
 
 async function openEventCard(row) {
   if (!row) return;
-  const dialog = ensureEventCardDialog();
-  dialog.dataset.eventId = String(row.id || "");
+  const drawer = ensureEventCardDrawer();
+  drawer.dataset.eventId = String(row.id || "");
 
-  // Optimistic render from list row, then enrich from API.
   fillEventCard(row, { loading: true });
-  if (typeof dialog.showModal === "function") dialog.showModal();
-  else dialog.setAttribute("open", "open");
+  drawer.hidden = false;
+  WorkerDropdown.close();
+  requestAnimationFrame(() => {
+    drawer.classList.add("is-open");
+    document.body.classList.add("event-card-open");
+  });
+
+  const onKeyDown = (e) => {
+    if (e.key === "Escape") closeEventCard();
+  };
+  document.addEventListener("keydown", onKeyDown, { once: true });
 
   try {
     const detail = await WorkerAPI.get(`/logs/${encodeURIComponent(String(row.id))}`, {
@@ -556,7 +600,8 @@ async function openEventCard(row) {
 }
 
 function fillEventCard(row, { loading = false, error = "" } = {}) {
-  const dialog = ensureEventCardDialog();
+  const root = eventCardRoot();
+  const $ = (id) => root.querySelector(`#${id}`);
   const typeLabel =
     row.eventType === "mafile"
       ? WorkerI18n.t("table.typeMafile")
@@ -569,21 +614,32 @@ function fillEventCard(row, { loading = false, error = "" } = {}) {
   const saleStatus = String(row.saleStatus || "none");
   const processStatus = String(row.processStatus || "none");
 
-  document.getElementById("eventCardTitle").textContent = WorkerI18n.t("dashboard.eventCardTitle", {
+  $("eventCardTitle").textContent = WorkerI18n.t("dashboard.eventCardTitle", {
     type: typeLabel,
     id: String(row.id || ""),
   });
-  document.getElementById("eventCardSubtitle").textContent = loading
+  $("eventCardSubtitle").textContent = loading
     ? WorkerI18n.t("common.loading")
     : WorkerFormat.date(row.createdAt);
 
-  const statusBadge = document.getElementById("eventCardStatusBadge");
+  const statusBadge = $("eventCardStatusBadge");
   statusBadge.className = `badge ${badgeClass}`;
   statusBadge.textContent = status;
 
-  document.getElementById("eventCardMoney").innerHTML = renderEventMoney(row);
+  const vacBadge = $("eventCardVacBadge");
+  if (vacBadge) {
+    if (row.vac) {
+      vacBadge.hidden = false;
+      vacBadge.textContent = renderVacBadgeLabel(row.vac);
+    } else {
+      vacBadge.hidden = true;
+      vacBadge.textContent = "";
+    }
+  }
 
-  document.getElementById("eventCardDetails").innerHTML = [
+  $("eventCardMoney").innerHTML = renderEventMoney(row);
+
+  $("eventCardDetails").innerHTML = [
     renderEventDetailItem(WorkerI18n.t("table.id"), WorkerFormat.escapeHtml(String(row.id || "—"))),
     renderEventDetailItem(
       WorkerI18n.t("table.type"),
@@ -605,45 +661,51 @@ function fillEventCard(row, { loading = false, error = "" } = {}) {
           WorkerFormat.escapeHtml(String(row.country))
         )
       : "",
+    row.vac
+      ? renderEventDetailItem(
+          WorkerI18n.t("dashboard.vac") || "VAC",
+          renderVacDetailValue(row.vac)
+        )
+      : "",
   ]
     .filter(Boolean)
     .join("");
 
-  const gamesEl = document.getElementById("eventCardGames");
+  const gamesEl = $("eventCardGames");
   const gamesHtml = renderEventGames(row.games || []);
   gamesEl.hidden = !gamesHtml;
   gamesEl.innerHTML = gamesHtml;
 
-  const itemsEl = document.getElementById("eventCardItems");
+  const itemsEl = $("eventCardItems");
   const itemsHtml = renderEventItems(row.topItems || []);
   itemsEl.hidden = !itemsHtml;
   itemsEl.innerHTML = itemsHtml;
 
-  const errorEl = document.getElementById("eventCardError");
+  const errorEl = $("eventCardError");
   if (errorEl) {
     errorEl.style.display = "none";
     errorEl.textContent = "";
   }
 
-  const hintEl = document.getElementById("eventCardHint");
+  const hintEl = $("eventCardHint");
   const hint =
     requestStatusLabel("sell", saleStatus) || requestStatusLabel("process", processStatus);
   hintEl.textContent = hint;
 
-  document.getElementById("eventCardClose").textContent =
+  $("eventCardClose").textContent =
     WorkerI18n.t("dashboard.eventCardClose") || "Закрыть";
 
-  const refreshBtn = document.getElementById("eventCardRefresh");
+  const refreshBtn = $("eventCardRefresh");
   refreshBtn.disabled = loading;
   refreshBtn.textContent = WorkerI18n.t("dashboard.actionRefresh") || "Обновить";
   refreshBtn.onclick = () => runEventCardRefresh(row);
 
-  const checkBtn = document.getElementById("eventCardCheckValid");
+  const checkBtn = $("eventCardCheckValid");
   checkBtn.disabled = loading;
   checkBtn.textContent = WorkerI18n.t("dashboard.actionCheckValid") || "Проверить на валид";
   checkBtn.onclick = () => runEventCardCheckValid(row);
 
-  const steamLink = document.getElementById("eventCardSteam");
+  const steamLink = $("eventCardSteam");
   if (row.steamProfileUrl || row.steamId) {
     steamLink.hidden = false;
     steamLink.href =
@@ -653,7 +715,7 @@ function fillEventCard(row, { loading = false, error = "" } = {}) {
     steamLink.hidden = true;
   }
 
-  const actionBtn = document.getElementById("eventCardAction");
+  const actionBtn = $("eventCardAction");
   actionBtn.hidden = true;
   actionBtn.disabled = loading;
   actionBtn.onclick = null;
@@ -670,7 +732,7 @@ function fillEventCard(row, { loading = false, error = "" } = {}) {
 }
 
 async function runEventCardRefresh(row) {
-  const refreshBtn = document.getElementById("eventCardRefresh");
+  const refreshBtn = eventCardRoot().querySelector("#eventCardRefresh");
   refreshBtn.disabled = true;
   try {
     const detail = await WorkerAPI.post(`/logs/${encodeURIComponent(String(row.id))}/refresh`);
@@ -687,8 +749,8 @@ async function runEventCardRefresh(row) {
 }
 
 async function runEventCardCheckValid(row) {
-  const hintEl = document.getElementById("eventCardHint");
-  const checkBtn = document.getElementById("eventCardCheckValid");
+  const hintEl = eventCardRoot().querySelector("#eventCardHint");
+  const checkBtn = eventCardRoot().querySelector("#eventCardCheckValid");
   checkBtn.disabled = true;
   try {
     const result = await WorkerAPI.post(
@@ -719,7 +781,7 @@ async function runEventCardCheckValid(row) {
 }
 
 async function runEventCardAction(row, action) {
-  const actionBtn = document.getElementById("eventCardAction");
+  const actionBtn = eventCardRoot().querySelector("#eventCardAction");
   const sourceId = encodeURIComponent(String(row.id || ""));
 
   actionBtn.disabled = true;

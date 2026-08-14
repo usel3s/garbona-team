@@ -1780,6 +1780,21 @@ table.data tbody tr.is-clickable:focus-visible td {
   gap: 12px;
 }
 
+.event-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.badge-vac {
+  border-color: rgba(255, 107, 107, 0.35);
+  background: rgba(255, 107, 107, 0.12);
+  color: #ff8a8a;
+}
+
 .event-card-head-text {
   min-width: 0;
 }
